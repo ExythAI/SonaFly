@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:controls="clr-namespace:SonaFly.Views.Controls"
+             x:Class="SonaFly.Views.AuditoriumPage"
+             Title="Auditorium"
+             BackgroundColor="#0D0D1A">
+
+    <Grid RowDefinitions="*,Auto">
+        <ScrollView Padding="16">
+            <VerticalStackLayout Spacing="12">
+
+                <!-- Header -->
+                <Label Text="🎵 Auditorium" FontSize="24" FontAttributes="Bold" TextColor="#FFE66D" />
+                <Label Text="{Binding StatusMessage}" TextColor="#FF6B6B" FontSize="12" />
+
+                <!-- Room List (when not in a room) -->
+                <VerticalStackLayout IsVisible="{Binding IsInRoom, Converter={StaticResource InvertBoolConverter}}" Spacing="8">
+                    <Label Text="Available Rooms" FontSize="16" FontAttributes="Bold" TextColor="#E8EAED" />
+
+                    <CollectionView ItemsSource="{Binding Auditoriums}" SelectionMode="None">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 12" Stroke="Transparent" Padding="16" Margin="0,4">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.JoinRoomCommand}"
+                                                              CommandParameter="{Binding}" />
+                                    </Border.GestureRecognizers>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <VerticalStackLayout>
+                                            <Label Text="{Binding Name}" FontSize="18" FontAttributes="Bold" TextColor="#E8EAED" />
+                                            <HorizontalStackLayout Spacing="8" Margin="0,4,0,0">
+                                                <Label Text="👥" FontSize="12" />
+                                                <Label Text="{Binding ActiveUserCount, StringFormat='{0} listening'}" FontSize="12" TextColor="#9AA0A6" />
+                                            </HorizontalStackLayout>
+                                            <Label Text="{Binding NowPlaying, StringFormat='♪ {0}'}" FontSize="12" TextColor="#4ECDC4" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="1" Text="Join ›" FontSize="14" TextColor="#FFE66D" VerticalTextAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                        <CollectionView.EmptyView>
+                            <Label Text="No auditoriums available. Ask an admin to create one." TextColor="#9AA0A6" FontSize="13"
+                                   HorizontalTextAlignment="Center" Margin="0,40" />
+                        </CollectionView.EmptyView>
+                    </CollectionView>
+
+                    <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" />
+                </VerticalStackLayout>
+
+                <!-- In-Room View -->
+                <VerticalStackLayout IsVisible="{Binding IsInRoom}" Spacing="12">
+
+                    <!-- Room Header -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout>
+                            <Label Text="{Binding RoomName}" FontSize="20" FontAttributes="Bold" TextColor="#E8EAED" />
+                            <Label Text="{Binding ActiveUserCount, StringFormat='{0} listeners'}" FontSize="12" TextColor="#9AA0A6" />
+                        </VerticalStackLayout>
+                        <Button Grid.Column="1" Text="Leave" TextColor="#FF6B6B" BackgroundColor="#252540"
+                                CornerRadius="16" Padding="16,6" FontSize="13" Command="{Binding LeaveRoomCommandCommand}" />
+                    </Grid>
+
+                    <!-- Now Playing -->
+                    <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 16" Stroke="Transparent" Padding="16">
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="NOW PLAYING" FontSize="10" TextColor="#9AA0A6" CharacterSpacing="2" />
+
+                            <Grid ColumnDefinitions="60,*" RowDefinitions="Auto,Auto" IsVisible="{Binding IsPlaying}">
+                                <Border StrokeShape="RoundRectangle 8" BackgroundColor="#252540" Padding="0" Grid.RowSpan="2"
+                                        WidthRequest="60" HeightRequest="60">
+                                    <Image Source="{Binding NowPlayingArtworkId, Converter={StaticResource ArtworkUrlConverter}}"
+                                           Aspect="AspectFill" />
+                                </Border>
+                                <VerticalStackLayout Grid.Column="1" Margin="12,0,0,0">
+                                    <Label Text="{Binding NowPlayingTitle}" FontSize="16" FontAttributes="Bold" TextColor="#E8EAED"
+                                           LineBreakMode="TailTruncation" MaxLines="1" />
+                                    <Label Text="{Binding NowPlayingArtist}" FontSize="13" TextColor="#9AA0A6" />
+                                    <Label Text="{Binding StartedByUserName, StringFormat='Started by {0}'}" FontSize="11" TextColor="#4ECDC4" />
+                                </VerticalStackLayout>
+                            </Grid>
+
+                            <Label Text="Nothing playing — queue or play a song!" FontSize="14" TextColor="#9AA0A6"
+                                   IsVisible="{Binding IsPlaying, Converter={StaticResource InvertBoolConverter}}" />
+
+                            <!-- Progress bar -->
+                            <ProgressBar Progress="{Binding NowPlayingPosition}" IsVisible="{Binding IsPlaying}"
+                                         ProgressColor="#4ECDC4" BackgroundColor="#252540" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Search & Queue Section -->
+                    <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 16" Stroke="Transparent" Padding="16">
+                        <VerticalStackLayout Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto,Auto">
+                                <Label Text="QUEUE" FontSize="10" TextColor="#9AA0A6" CharacterSpacing="2" VerticalTextAlignment="Center" />
+                                <Button Grid.Column="1" Text="🔍 Search" TextColor="#4ECDC4" BackgroundColor="Transparent"
+                                        FontSize="12" Padding="8,0" Command="{Binding ToggleSearchCommand}" />
+                                <Button Grid.Column="2" Text="📁 Browse" TextColor="#FFE66D" BackgroundColor="Transparent"
+                                        FontSize="12" Padding="8,0" Command="{Binding ToggleBrowseCommand}" />
+                            </Grid>
+
+                            <!-- Search Box -->
+                            <VerticalStackLayout IsVisible="{Binding ShowSearch}" Spacing="6">
+                                <SearchBar Placeholder="Search tracks…" Text="{Binding SearchQuery}" PlaceholderColor="#666"
+                                           TextColor="#E8EAED" BackgroundColor="#252540"
+                                           SearchCommand="{Binding SearchCommand}" />
+                                <CollectionView ItemsSource="{Binding SearchResults}" SelectionMode="Single"
+                                                SelectionChangedCommand="{Binding QueueTrackCommand}"
+                                                SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}"
+                                                HeightRequest="200">
+                                    <CollectionView.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border BackgroundColor="#252540" Stroke="Transparent" StrokeShape="RoundRectangle 6" Padding="10" Margin="0,2">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <VerticalStackLayout>
+                                                        <Label Text="{Binding Title}" FontSize="13" TextColor="#E8EAED" LineBreakMode="TailTruncation" MaxLines="1" />
+                                                        <Label Text="{Binding ArtistName}" FontSize="11" TextColor="#9AA0A6" />
+                                                    </VerticalStackLayout>
+                                                    <Label Grid.Column="1" Text="＋" FontSize="16" TextColor="#4ECDC4" VerticalTextAlignment="Center" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </CollectionView.ItemTemplate>
+                                </CollectionView>
+                            </VerticalStackLayout>
+
+                            <!-- Browse Albums -->
+                            <VerticalStackLayout IsVisible="{Binding ShowBrowse}" Spacing="6">
+                                <!-- Album list (grid) -->
+                                <VerticalStackLayout IsVisible="{Binding ShowBrowseTracks, Converter={StaticResource InvertBoolConverter}}">
+                                    <Label Text="Tap an album to see tracks" FontSize="11" TextColor="#9AA0A6" Margin="0,0,0,4" />
+                                    <CollectionView ItemsSource="{Binding BrowseAlbums}" SelectionMode="Single"
+                                                    SelectionChangedCommand="{Binding SelectBrowseAlbumCommand}"
+                                                    SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}"
+                                                    HeightRequest="260">
+                                        <CollectionView.ItemsLayout>
+                                            <GridItemsLayout Orientation="Vertical" Span="3" HorizontalItemSpacing="6" VerticalItemSpacing="6" />
+                                        </CollectionView.ItemsLayout>
+                                        <CollectionView.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BackgroundColor="#252540" StrokeShape="RoundRectangle 8" Stroke="Transparent" Padding="0">
+                                                    <VerticalStackLayout>
+                                                        <Image Source="{Binding ArtworkId, Converter={StaticResource ArtworkUrlConverter}}"
+                                                               HeightRequest="70" Aspect="AspectFill" BackgroundColor="#1A1A2E" />
+                                                        <VerticalStackLayout Padding="4,3">
+                                                            <Label Text="{Binding Title}" FontSize="10" FontAttributes="Bold" TextColor="#E8EAED"
+                                                                   LineBreakMode="TailTruncation" MaxLines="1" />
+                                                            <Label Text="{Binding ArtistName}" FontSize="8" TextColor="#9AA0A6"
+                                                                   LineBreakMode="TailTruncation" MaxLines="1" />
+                                                        </VerticalStackLayout>
+                                                    </VerticalStackLayout>
+                                                </Border>
+                                            </DataTemplate>
+                                        </CollectionView.ItemTemplate>
+                                    </CollectionView>
+                                </VerticalStackLayout>
+
+                                <!-- Album tracks -->
+                                <VerticalStackLayout IsVisible="{Binding ShowBrowseTracks}" Spacing="4">
+                                    <HorizontalStackLayout Spacing="8">
+                                        <Button Text="← Albums" TextColor="#FFE66D" BackgroundColor="Transparent" FontSize="12"
+                                                Padding="0" Command="{Binding BackToAlbumsCommand}" />
+                                        <Label Text="{Binding SelectedBrowseAlbum.Title}" FontSize="13" FontAttributes="Bold"
+                                               TextColor="#E8EAED" VerticalTextAlignment="Center" LineBreakMode="TailTruncation" />
+                                    </HorizontalStackLayout>
+                                    <CollectionView ItemsSource="{Binding BrowseTracks}" SelectionMode="Single"
+                                                    SelectionChangedCommand="{Binding QueueBrowseTrackCommand}"
+                                                    SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}"
+                                                    HeightRequest="220">
+                                        <CollectionView.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BackgroundColor="#252540" Stroke="Transparent" StrokeShape="RoundRectangle 6" Padding="10" Margin="0,2">
+                                                    <Grid ColumnDefinitions="24,*,Auto">
+                                                        <Label Text="{Binding TrackNumber}" FontSize="12" TextColor="#9AA0A6" VerticalTextAlignment="Center" HorizontalTextAlignment="End" />
+                                                        <VerticalStackLayout Grid.Column="1" Margin="8,0,0,0">
+                                                            <Label Text="{Binding Title}" FontSize="13" TextColor="#E8EAED" LineBreakMode="TailTruncation" MaxLines="1" />
+                                                            <Label Text="{Binding ArtistName}" FontSize="10" TextColor="#9AA0A6" />
+                                                        </VerticalStackLayout>
+                                                        <Label Grid.Column="2" Text="＋" FontSize="16" TextColor="#4ECDC4" VerticalTextAlignment="Center" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </CollectionView.ItemTemplate>
+                                    </CollectionView>
+                                </VerticalStackLayout>
+                            </VerticalStackLayout>
+
+                            <!-- Queue List -->
+                            <CollectionView ItemsSource="{Binding Queue}">
+                                <CollectionView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BackgroundColor="Transparent" Stroke="Transparent" Padding="8,6">
+                                            <Grid ColumnDefinitions="24,*,Auto">
+                                                <Label Text="♪" FontSize="14" TextColor="#4ECDC4" VerticalTextAlignment="Center" />
+                                                <VerticalStackLayout Grid.Column="1" Margin="8,0,0,0">
+                                                    <Label Text="{Binding Title}" FontSize="13" TextColor="#E8EAED" LineBreakMode="TailTruncation" MaxLines="1" />
+                                                    <Label Text="{Binding QueuedByUserName, StringFormat='Queued by {0}'}" FontSize="10" TextColor="#9AA0A6" />
+                                                </VerticalStackLayout>
+                                                <Label Grid.Column="2" Text="✕" FontSize="14" TextColor="#FF6B6B" VerticalTextAlignment="Center">
+                                                    <Label.GestureRecognizers>
+                                                        <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.RemoveQueueItemCommand}"
+                                                                              CommandParameter="{Binding}" />
+                                                    </Label.GestureRecognizers>
+                                                </Label>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </CollectionView.ItemTemplate>
+                                <CollectionView.EmptyView>
+                                    <Label Text="Queue is empty" FontSize="12" TextColor="#9AA0A6" HorizontalTextAlignment="Center" Margin="0,8" />
+                                </CollectionView.EmptyView>
+                            </CollectionView>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Active Users -->
+                    <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 16" Stroke="Transparent" Padding="16">
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="LISTENING NOW" FontSize="10" TextColor="#9AA0A6" CharacterSpacing="2" />
+                            <CollectionView ItemsSource="{Binding ActiveUsers}" HeightRequest="80">
+                                <CollectionView.ItemsLayout>
+                                    <LinearItemsLayout Orientation="Horizontal" ItemSpacing="8" />
+                                </CollectionView.ItemsLayout>
+                                <CollectionView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BackgroundColor="#252540" StrokeShape="RoundRectangle 20" Stroke="Transparent" Padding="12,6">
+                                            <Label Text="{Binding DisplayName}" FontSize="12" TextColor="#E8EAED" VerticalTextAlignment="Center" />
+                                        </Border>
+                                    </DataTemplate>
+                                </CollectionView.ItemTemplate>
+                            </CollectionView>
+                        </VerticalStackLayout>
+                    </Border>
+
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Hidden MiniPlayer — only used for MediaElement audio, no visible controls -->
+        <controls:MiniPlayerControl x:Name="MiniPlayer" Grid.Row="1" IsVisible="False" HeightRequest="0" />
+    </Grid>
+</ContentPage>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="SonaFly.Views.LoginPage"
+             Title="Login"
+             BackgroundColor="#0D0D1A"
+             Shell.NavBarIsVisible="False">
+
+    <Grid VerticalOptions="Center" Padding="32">
+        <VerticalStackLayout Spacing="16" VerticalOptions="Center">
+            <Image Source="sonafly_logo.png" HeightRequest="140" Aspect="AspectFit" />
+            <Label Text="SonaFly" FontSize="32" FontAttributes="Bold" HorizontalTextAlignment="Center" TextColor="#FFE66D" />
+            <Label Text="{Binding ServerName}" FontSize="14" HorizontalTextAlignment="Center" TextColor="#9AA0A6" Margin="0,0,0,16" />
+
+            <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 16" Stroke="Transparent" Padding="24">
+                <VerticalStackLayout Spacing="14">
+                    <Entry Placeholder="Username" Text="{Binding Username}" PlaceholderColor="#666"
+                           TextColor="#E8EAED" BackgroundColor="#12121E" FontSize="16" />
+                    <Entry Placeholder="Password" Text="{Binding Password}" IsPassword="True" PlaceholderColor="#666"
+                           TextColor="#E8EAED" BackgroundColor="#12121E" FontSize="16" />
+                    <Button Text="Sign In" BackgroundColor="#FF6B6B" TextColor="#0D0D1A" FontSize="16"
+                            FontAttributes="Bold" CornerRadius="10" HeightRequest="48"
+                            Command="{Binding LoginCommand}" />
+                    <Label Text="{Binding ErrorMessage}" FontSize="12" TextColor="#FF6B6B" HorizontalTextAlignment="Center" />
+                    <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" />
+                </VerticalStackLayout>
+            </Border>
+        </VerticalStackLayout>
+    </Grid>
+</ContentPage>

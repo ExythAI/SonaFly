@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:controls="clr-namespace:SonaFly.Views.Controls"
+             x:Class="SonaFly.Views.PlaylistsPage"
+             Title="Playlists"
+             BackgroundColor="#0D0D1A">
+
+    <Grid RowDefinitions="Auto,*,Auto" Padding="16,16,16,0">
+        <!-- Header -->
+        <Grid ColumnDefinitions="Auto,*,Auto">
+            <Button Text="← Back" TextColor="#FFE66D" BackgroundColor="Transparent" FontSize="14"
+                    Command="{Binding GoBackCommand}" IsVisible="{Binding ShowPlaylistDetail}" />
+            <Button Text="← Back" TextColor="#FFE66D" BackgroundColor="Transparent" FontSize="14"
+                    Command="{Binding GoBackCommand}" IsVisible="{Binding ShowMixedTapeDetail}" />
+            <Button Text="← Back" TextColor="#FFE66D" BackgroundColor="Transparent" FontSize="14"
+                    Command="{Binding CancelCreateCommand}" IsVisible="{Binding ShowCreateForm}" />
+            <Label Grid.Column="1" Text="Playlists" FontSize="22" FontAttributes="Bold" TextColor="#E8EAED" VerticalTextAlignment="Center" />
+            <Button Grid.Column="2" Text="＋ New" BackgroundColor="#4ECDC4" TextColor="#0D0D1A" FontSize="13"
+                    FontAttributes="Bold" CornerRadius="16" Padding="14,6"
+                    Command="{Binding ShowCreateCommand}" IsVisible="{Binding ShowList}" />
+        </Grid>
+
+        <!-- List view -->
+        <ScrollView Grid.Row="1" Margin="0,12,0,0" IsVisible="{Binding ShowList}">
+            <VerticalStackLayout Spacing="8">
+                <Label Text="Playlists" FontSize="16" FontAttributes="Bold" TextColor="#FFE66D" Margin="0,0,0,4" />
+                <CollectionView x:Name="PlaylistsList" ItemsSource="{Binding Playlists}" SelectionMode="Single"
+                                SelectionChangedCommand="{Binding SelectPlaylistCommand}"
+                                SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 10" Stroke="Transparent" Padding="14" Margin="0,3">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <VerticalStackLayout>
+                                        <Label Text="{Binding Name}" FontSize="15" FontAttributes="Bold" TextColor="#E8EAED" />
+                                        <Label FontSize="11" TextColor="#9AA0A6">
+                                            <Label.FormattedText>
+                                                <FormattedString>
+                                                    <Span Text="{Binding TrackCount}" />
+                                                    <Span Text=" tracks" />
+                                                </FormattedString>
+                                            </Label.FormattedText>
+                                        </Label>
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="1" Text="›" FontSize="20" TextColor="#9AA0A6" VerticalTextAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <Grid ColumnDefinitions="Auto,*" Margin="0,16,0,4">
+                    <Image Source="mixedtape.png" HeightRequest="28" Aspect="AspectFit" />
+                    <Label Grid.Column="1" Text="Mixed Tapes" FontSize="16" FontAttributes="Bold" TextColor="#FF6B6B" VerticalTextAlignment="Center" Margin="8,0,0,0" />
+                </Grid>
+                <CollectionView ItemsSource="{Binding MixedTapes}" SelectionMode="Single"
+                                SelectionChangedCommand="{Binding SelectMixedTapeCommand}"
+                                SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 10" Stroke="Transparent" Padding="14" Margin="0,3">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <Image Source="mixedtape.png" HeightRequest="36" WidthRequest="36" Aspect="AspectFit" />
+                                    <VerticalStackLayout Grid.Column="1" Margin="10,0,0,0">
+                                        <Label Text="{Binding Name}" FontSize="15" FontAttributes="Bold" TextColor="#E8EAED" />
+                                        <Label FontSize="11" TextColor="#9AA0A6">
+                                            <Label.FormattedText>
+                                                <FormattedString>
+                                                    <Span Text="{Binding TrackCount}" />
+                                                    <Span Text=" tracks" />
+                                                </FormattedString>
+                                            </Label.FormattedText>
+                                        </Label>
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="2" Text="›" FontSize="20" TextColor="#9AA0A6" VerticalTextAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Create Playlist Form -->
+        <VerticalStackLayout Grid.Row="1" Margin="0,24,0,0" Spacing="16" IsVisible="{Binding ShowCreateForm}">
+            <Label Text="Create a Playlist" FontSize="20" FontAttributes="Bold" TextColor="#FFE66D" HorizontalTextAlignment="Center" />
+            <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 16" Stroke="Transparent" Padding="24">
+                <VerticalStackLayout Spacing="14">
+                    <Entry Placeholder="Playlist name" Text="{Binding NewPlaylistName}" PlaceholderColor="#666"
+                           TextColor="#E8EAED" BackgroundColor="#12121E" FontSize="16" />
+                    <Entry Placeholder="Description (optional)" Text="{Binding NewPlaylistDescription}" PlaceholderColor="#666"
+                           TextColor="#E8EAED" BackgroundColor="#12121E" FontSize="14" />
+                    <Button Text="Create Playlist" BackgroundColor="#4ECDC4" TextColor="#0D0D1A" FontAttributes="Bold"
+                            CornerRadius="10" HeightRequest="48" FontSize="16" Command="{Binding CreatePlaylistCommand}" />
+                    <Button Text="Cancel" BackgroundColor="Transparent" TextColor="#9AA0A6" FontSize="14"
+                            Command="{Binding CancelCreateCommand}" />
+                    <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" />
+                </VerticalStackLayout>
+            </Border>
+        </VerticalStackLayout>
+
+        <!-- Playlist Detail -->
+        <ScrollView Grid.Row="1" Margin="0,12,0,0" IsVisible="{Binding ShowPlaylistDetail}">
+            <VerticalStackLayout Spacing="4">
+                <Label Text="{Binding SelectedPlaylist.Name}" FontSize="22" FontAttributes="Bold" TextColor="#FFE66D" />
+                <Label Text="{Binding SelectedPlaylist.Description}" FontSize="13" TextColor="#9AA0A6" Margin="0,0,0,4" />
+                <Button Text="🗑 Delete Playlist" BackgroundColor="#FF6B6B" TextColor="White" FontSize="12"
+                        CornerRadius="8" Padding="12,6" HorizontalOptions="Start" Margin="0,0,0,12"
+                        Command="{Binding DeletePlaylistCommand}" />
+                <CollectionView x:Name="PlaylistTracksList" ItemsSource="{Binding SelectedPlaylist.Items}" SelectionMode="Single"
+                                SelectionChangedCommand="{Binding PlayPlaylistTrackCommand}"
+                                SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Border BackgroundColor="Transparent" Stroke="Transparent" Padding="10,8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <VerticalStackLayout>
+                                        <Label Text="{Binding TrackTitle}" FontSize="14" TextColor="#E8EAED" LineBreakMode="TailTruncation" MaxLines="1" />
+                                        <Label Text="{Binding ArtistName}" FontSize="11" TextColor="#9AA0A6" />
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="1" Text="▶" FontSize="14" TextColor="#FF6B6B" VerticalTextAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Mixed Tape Detail -->
+        <ScrollView Grid.Row="1" Margin="0,12,0,0" IsVisible="{Binding ShowMixedTapeDetail}">
+            <VerticalStackLayout Spacing="4">
+                <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,12">
+                    <Image Source="mixedtape.png" HeightRequest="48" Aspect="AspectFit" />
+                    <Label Grid.Column="1" Text="{Binding SelectedMixedTape.Name}" FontSize="22" FontAttributes="Bold" TextColor="#FF6B6B" VerticalTextAlignment="Center" Margin="12,0,0,0" />
+                </Grid>
+                <CollectionView x:Name="MixedTapeTracksList" ItemsSource="{Binding SelectedMixedTape.Items}" SelectionMode="Single"
+                                SelectionChangedCommand="{Binding PlayMixedTapeTrackCommand}"
+                                SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Border BackgroundColor="Transparent" Stroke="Transparent" Padding="10,8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <VerticalStackLayout>
+                                        <Label Text="{Binding TrackTitle}" FontSize="14" TextColor="#E8EAED" LineBreakMode="TailTruncation" MaxLines="1" />
+                                        <Label Text="{Binding ArtistName}" FontSize="11" TextColor="#9AA0A6" />
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="1" Text="▶" FontSize="14" TextColor="#FF6B6B" VerticalTextAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <ActivityIndicator Grid.Row="1" IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" VerticalOptions="Center" />
+
+        <controls:MiniPlayerControl x:Name="MiniPlayer" Grid.Row="2" />
+    </Grid>
+</ContentPage>

@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="SonaFly/SonaFly.csproj">
+    <Deploy Solution="Debug|*" />
+  </Project>
+  <Project Path="SonaFlyUI/sonaflyui.client/sonaflyui.client.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+  <Project Path="SonaFlyUI/SonaFlyUI.Server/SonaFlyUI.Server.csproj" Id="db5a9261-92ba-4f2b-a980-c592e2ad0ef9" />
+</Solution>

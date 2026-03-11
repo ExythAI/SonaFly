@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:SonaFly.ViewModels"
+             x:Class="SonaFly.Views.ServerSetupPage"
+             Title="Connect to Server"
+             BackgroundColor="#0D0D1A">
+
+    <ScrollView Padding="24">
+        <VerticalStackLayout Spacing="16">
+            <Image Source="sonafly_logo.png" HeightRequest="120" Aspect="AspectFit" Margin="0,20,0,0" />
+            <Label Text="SonaFly" FontSize="28" FontAttributes="Bold" HorizontalTextAlignment="Center" TextColor="#FFE66D" />
+            <Label Text="Add your SonaFly server to get started" FontSize="14" HorizontalTextAlignment="Center" TextColor="#9AA0A6" Margin="0,0,0,20" />
+
+            <!-- Server list -->
+            <CollectionView ItemsSource="{Binding Servers}" SelectionMode="None">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 12" Stroke="Transparent" Padding="16" Margin="0,4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <VerticalStackLayout>
+                                    <Label Text="{Binding Name}" FontSize="16" FontAttributes="Bold" TextColor="#E8EAED" />
+                                    <Label Text="{Binding BaseUrl}" FontSize="12" TextColor="#9AA0A6" />
+                                </VerticalStackLayout>
+                                <HorizontalStackLayout Grid.Column="1" Spacing="8">
+                                    <Button Text="Select" BackgroundColor="#4ECDC4" TextColor="#0D0D1A" FontSize="12" CornerRadius="8" Padding="12,6"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ServerSetupViewModel}}, Path=SelectServerCommand}"
+                                            CommandParameter="{Binding Id}" />
+                                    <Button Text="✕" BackgroundColor="#FF6B6B" TextColor="White" FontSize="12" CornerRadius="8" Padding="8,6"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ServerSetupViewModel}}, Path=RemoveServerCommand}"
+                                            CommandParameter="{Binding Id}" />
+                                </HorizontalStackLayout>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <!-- Add server form -->
+            <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 12" Stroke="Transparent" Padding="20" Margin="0,12,0,0">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="Add Server" FontSize="18" FontAttributes="Bold" TextColor="#FFE66D" />
+                    <Entry Placeholder="Server URL (e.g. http://192.168.0.188:5092)" Text="{Binding ServerUrl}" PlaceholderColor="#666"
+                           TextColor="#E8EAED" BackgroundColor="#12121E" />
+                    <Entry Placeholder="Name (optional)" Text="{Binding ServerName}" PlaceholderColor="#666"
+                           TextColor="#E8EAED" BackgroundColor="#12121E" />
+                    <Button Text="Add Server" BackgroundColor="#FF6B6B" TextColor="#0D0D1A"
+                            FontAttributes="Bold" CornerRadius="8" Command="{Binding AddServerCommand}" />
+                    <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" />
+                    <Label Text="{Binding StatusMessage}" FontSize="12" TextColor="#4ECDC4" HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </Border>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

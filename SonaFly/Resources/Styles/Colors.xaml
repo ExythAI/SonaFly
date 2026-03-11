@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?xaml-comp compile="true" ?>
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <!-- Standard color keys required by Styles.xaml -->
+    <Color x:Key="White">#FFFFFF</Color>
+    <Color x:Key="Black">#000000</Color>
+    <Color x:Key="OffBlack">#0D0D1A</Color>
+    <Color x:Key="Gray100">#E1E1E1</Color>
+    <Color x:Key="Gray200">#9AA0A6</Color>
+    <Color x:Key="Gray300">#666680</Color>
+    <Color x:Key="Gray400">#555570</Color>
+    <Color x:Key="Gray500">#444460</Color>
+    <Color x:Key="Gray600">#333350</Color>
+    <Color x:Key="Gray900">#E8EAED</Color>
+    <Color x:Key="Gray950">#1A1A2E</Color>
+
+    <!-- SonaFly brand colors -->
+    <Color x:Key="Primary">#FF6B6B</Color>
+    <Color x:Key="PrimaryDark">#FF6B6B</Color>
+    <Color x:Key="PrimaryDarkText">#0D0D1A</Color>
+    <Color x:Key="Secondary">#FFE66D</Color>
+    <Color x:Key="SecondaryDarkText">#FFE66D</Color>
+    <Color x:Key="Accent">#4ECDC4</Color>
+    <Color x:Key="Magenta">#FF6B6B</Color>
+    <Color x:Key="MidnightBlue">#0D0D1A</Color>
+
+    <!-- Semantic aliases -->
+    <Color x:Key="Background">#0D0D1A</Color>
+    <Color x:Key="Surface">#1A1A2E</Color>
+    <Color x:Key="SurfaceLight">#252540</Color>
+    <Color x:Key="TextPrimary">#E8EAED</Color>
+    <Color x:Key="TextSecondary">#9AA0A6</Color>
+    <Color x:Key="Danger">#FF6B6B</Color>
+</ResourceDictionary>

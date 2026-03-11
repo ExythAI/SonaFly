@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:controls="clr-namespace:SonaFly.Views.Controls"
+             x:Class="SonaFly.Views.BrowsePage"
+             Title="Browse"
+             BackgroundColor="#0D0D1A">
+
+    <Grid RowDefinitions="Auto,*,Auto" Padding="16,16,16,0">
+        <!-- Header -->
+        <HorizontalStackLayout Spacing="12">
+            <Button Text="← Back" TextColor="#FFE66D" BackgroundColor="Transparent" FontSize="14"
+                    Command="{Binding GoBackCommand}" IsVisible="{Binding CanGoBack}" />
+            <Button Text="Artists" BackgroundColor="#252540" TextColor="#E8EAED" CornerRadius="16" Padding="16,6" FontSize="13"
+                    Command="{Binding LoadArtistsCommand}" />
+            <Button Text="Albums" BackgroundColor="#252540" TextColor="#E8EAED" CornerRadius="16" Padding="16,6" FontSize="13"
+                    Command="{Binding LoadAllAlbumsCommand}" />
+        </HorizontalStackLayout>
+
+        <!-- Artist List -->
+        <CollectionView Grid.Row="1" ItemsSource="{Binding Artists}" SelectionMode="Single"
+                        IsVisible="{Binding ShowArtists}" Margin="0,12,0,0"
+                        SelectionChangedCommand="{Binding SelectArtistCommand}"
+                        SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}">
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 10" Stroke="Transparent" Padding="14" Margin="0,3">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <VerticalStackLayout>
+                                <Label Text="{Binding Name}" FontSize="15" FontAttributes="Bold" TextColor="#E8EAED" />
+                                <Label FontSize="11" TextColor="#9AA0A6">
+                                    <Label.FormattedText>
+                                        <FormattedString>
+                                            <Span Text="{Binding AlbumCount}" />
+                                            <Span Text=" albums · " />
+                                            <Span Text="{Binding TrackCount}" />
+                                            <Span Text=" tracks" />
+                                        </FormattedString>
+                                    </Label.FormattedText>
+                                </Label>
+                            </VerticalStackLayout>
+                            <Label Grid.Column="1" Text="›" FontSize="20" TextColor="#9AA0A6" VerticalTextAlignment="Center" />
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <!-- Album Grid -->
+        <CollectionView Grid.Row="1" ItemsSource="{Binding Albums}" SelectionMode="Single"
+                        IsVisible="{Binding ShowAlbums}" Margin="0,12,0,0"
+                        SelectionChangedCommand="{Binding SelectAlbumCommand}"
+                        SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}">
+            <CollectionView.ItemsLayout>
+                <GridItemsLayout Orientation="Vertical" Span="2" HorizontalItemSpacing="8" VerticalItemSpacing="8" />
+            </CollectionView.ItemsLayout>
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 10" Stroke="Transparent" Padding="0">
+                        <VerticalStackLayout>
+                            <Image Source="{Binding ArtworkId, Converter={StaticResource ArtworkUrlConverter}}"
+                                   HeightRequest="130" Aspect="AspectFill" BackgroundColor="#252540" />
+                            <VerticalStackLayout Padding="10,8">
+                                <Label Text="{Binding Title}" FontSize="13" FontAttributes="Bold" TextColor="#E8EAED" LineBreakMode="TailTruncation" MaxLines="1" />
+                                <Label Text="{Binding ArtistName}" FontSize="11" TextColor="#9AA0A6" LineBreakMode="TailTruncation" MaxLines="1" />
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+                    </Border>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <!-- Album Detail -->
+        <ScrollView Grid.Row="1" Margin="0,12,0,0" IsVisible="{Binding ShowAlbumDetail}">
+            <VerticalStackLayout Spacing="8">
+                <Image Source="{Binding SelectedAlbum.ArtworkId, Converter={StaticResource ArtworkUrlConverter}}"
+                       HeightRequest="200" Aspect="AspectFill" BackgroundColor="#252540" />
+                <Label Text="{Binding SelectedAlbum.Title}" FontSize="22" FontAttributes="Bold" TextColor="#E8EAED" Margin="0,8,0,0" />
+                <Label Text="{Binding SelectedAlbum.ArtistName}" FontSize="14" TextColor="#9AA0A6" />
+                <Button Text="▶  Play Album" BackgroundColor="#4ECDC4" TextColor="#0D0D1A" FontAttributes="Bold" CornerRadius="10"
+                        HeightRequest="44" Command="{Binding PlayAlbumCommand}" Margin="0,8,0,12" />
+
+                <CollectionView x:Name="TracksList" ItemsSource="{Binding SelectedAlbum.Tracks}" SelectionMode="Single"
+                                SelectionChangedCommand="{Binding PlayTrackCommand}"
+                                SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Border BackgroundColor="Transparent" Stroke="Transparent" Padding="12,10">
+                                <Grid ColumnDefinitions="30,*,Auto,Auto">
+                                    <Label Text="{Binding TrackNumber}" FontSize="13" TextColor="#9AA0A6" VerticalTextAlignment="Center" HorizontalTextAlignment="End" />
+                                    <VerticalStackLayout Grid.Column="1" Margin="12,0,0,0">
+                                        <Label Text="{Binding Title}" FontSize="14" TextColor="#E8EAED" LineBreakMode="TailTruncation" MaxLines="1" />
+                                        <Label Text="{Binding ArtistName}" FontSize="11" TextColor="#9AA0A6" />
+                                    </VerticalStackLayout>
+                                    <Button Grid.Column="2" Text="＋" FontSize="16" TextColor="#4ECDC4" BackgroundColor="Transparent"
+                                            Padding="8,0" MinimumWidthRequest="36" Clicked="OnAddToPlaylistClicked" CommandParameter="{Binding}" />
+                                    <Label Grid.Column="3" Text="▶" FontSize="16" TextColor="#FF6B6B" VerticalTextAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <ActivityIndicator Grid.Row="1" IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" VerticalOptions="Center" />
+
+        <controls:MiniPlayerControl x:Name="MiniPlayer" Grid.Row="2" />
+    </Grid>
+</ContentPage>

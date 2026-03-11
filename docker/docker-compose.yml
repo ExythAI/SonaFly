@@ -1,0 +1,26 @@
+services:
+  sonafly:
+    build:
+      context: ..
+      dockerfile: SonaFlyUI/SonaFlyUI.Server/Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: ${DB_CONNECTION}
+      SonaFly__ArtworkRoot: ${ARTWORK_ROOT}
+      Jwt__Secret: ${JWT_SECRET}
+      SonaFly__AdminDefaultPassword: ${ADMIN_DEFAULT_PASSWORD}
+    volumes:
+      - sonafly_db:/app/data/db
+      - sonafly_artwork:/app/data/artwork
+      - sonafly_logs:/app/data/logs
+      - /mnt/music:/music/library-main:ro
+    restart: unless-stopped
+
+volumes:
+  sonafly_db:
+  sonafly_artwork:
+  sonafly_logs:

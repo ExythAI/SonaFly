@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="SonaFly.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:views="clr-namespace:SonaFly.Views"
+    Title="SonaFly"
+    Shell.BackgroundColor="#0D0D1A"
+    Shell.ForegroundColor="#FFE66D"
+    Shell.TitleColor="#FFE66D"
+    Shell.UnselectedColor="#666680"
+    Shell.TabBarBackgroundColor="#12121E"
+    Shell.TabBarForegroundColor="#FFE66D"
+    Shell.TabBarUnselectedColor="#666680">
+
+    <!-- Main app (tabs) — default landing -->
+    <TabBar Route="main">
+        <ShellContent Route="home" Title="Home" ContentTemplate="{DataTemplate views:HomePage}" />
+        <ShellContent Route="browse" Title="Browse" ContentTemplate="{DataTemplate views:BrowsePage}" />
+        <ShellContent Route="auditorium" Title="Live" ContentTemplate="{DataTemplate views:AuditoriumPage}" />
+        <ShellContent Route="playlists" Title="Playlists" ContentTemplate="{DataTemplate views:PlaylistsPage}" />
+        <ShellContent Route="search" Title="Search" ContentTemplate="{DataTemplate views:SearchPage}" />
+        <ShellContent Route="settings" Title="Settings" ContentTemplate="{DataTemplate views:SettingsPage}" />
+    </TabBar>
+</Shell>

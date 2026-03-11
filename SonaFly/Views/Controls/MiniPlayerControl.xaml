@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             x:Class="SonaFly.Views.Controls.MiniPlayerControl"
+             IsVisible="{Binding IsVisible, Source={RelativeSource Self}}">
+
+    <Grid RowDefinitions="Auto,Auto" BackgroundColor="#12121E">
+        <!-- Mini player bar -->
+        <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 0" Stroke="Transparent" Padding="12,8"
+                IsVisible="{Binding HasTrack}">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                <BoxView WidthRequest="42" HeightRequest="42" BackgroundColor="#252540" CornerRadius="6" />
+                <VerticalStackLayout Grid.Column="1" Margin="10,0,0,0" VerticalOptions="Center">
+                    <Label Text="{Binding TrackTitle}" FontSize="13" FontAttributes="Bold" TextColor="#E8EAED"
+                           LineBreakMode="TailTruncation" MaxLines="1" />
+                    <Label Text="{Binding ArtistName}" FontSize="11" TextColor="#9AA0A6"
+                           LineBreakMode="TailTruncation" MaxLines="1" />
+                </VerticalStackLayout>
+                <Button Grid.Column="2" Text="⏮" FontSize="18" BackgroundColor="Transparent" TextColor="#9AA0A6"
+                        Padding="8,4" Command="{Binding PreviousCommand}" />
+                <Button Grid.Column="3" Text="{Binding PlayPauseIcon}" FontSize="22" BackgroundColor="Transparent"
+                        TextColor="#FF6B6B" Padding="8,4" Command="{Binding PlayPauseCommand}" />
+                <Button Grid.Column="4" Text="⏭" FontSize="18" BackgroundColor="Transparent" TextColor="#9AA0A6"
+                        Padding="8,4" Command="{Binding NextCommand}" />
+            </Grid>
+        </Border>
+
+        <!-- Hidden MediaElement for actual audio playback -->
+        <toolkit:MediaElement x:Name="Player" IsVisible="False" Grid.Row="1"
+                              HeightRequest="0" WidthRequest="0"
+                              ShouldAutoPlay="True"
+                              MediaEnded="OnMediaEnded" />
+    </Grid>
+</ContentView>

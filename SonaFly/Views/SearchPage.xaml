@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:controls="clr-namespace:SonaFly.Views.Controls"
+             x:Class="SonaFly.Views.SearchPage"
+             Title="Search"
+             BackgroundColor="#0D0D1A">
+
+    <Grid RowDefinitions="Auto,*,Auto" Padding="16,16,16,0">
+        <SearchBar Placeholder="Search artists, albums, tracks…" Text="{Binding Query}" PlaceholderColor="#666"
+                   TextColor="#E8EAED" BackgroundColor="#1A1A2E" SearchCommand="{Binding SearchCommand}" />
+
+        <ScrollView Grid.Row="1" Margin="0,12,0,0">
+            <VerticalStackLayout Spacing="8">
+                <Label Text="Tracks" FontSize="16" FontAttributes="Bold" TextColor="#FF6B6B" Margin="0,0,0,4"
+                       IsVisible="{Binding HasResults}" />
+                <CollectionView x:Name="SearchTracksList" ItemsSource="{Binding Tracks}" SelectionMode="Single"
+                                SelectionChangedCommand="{Binding PlayTrackCommand}"
+                                SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 8" Stroke="Transparent" Padding="12" Margin="0,2">
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <VerticalStackLayout>
+                                        <Label Text="{Binding Title}" FontSize="14" FontAttributes="Bold" TextColor="#E8EAED" LineBreakMode="TailTruncation" MaxLines="1" />
+                                        <Label FontSize="11" TextColor="#9AA0A6">
+                                            <Label.FormattedText>
+                                                <FormattedString>
+                                                    <Span Text="{Binding ArtistName}" />
+                                                    <Span Text=" · " />
+                                                    <Span Text="{Binding AlbumTitle}" />
+                                                </FormattedString>
+                                            </Label.FormattedText>
+                                        </Label>
+                                    </VerticalStackLayout>
+                                    <Button Grid.Column="1" Text="＋" FontSize="14" TextColor="#4ECDC4" BackgroundColor="Transparent"
+                                            Padding="8,0" MinimumWidthRequest="36" Clicked="OnAddToPlaylistClicked" CommandParameter="{Binding}" />
+                                    <Label Grid.Column="2" Text="▶" FontSize="14" TextColor="#FF6B6B" VerticalTextAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <Label Text="Albums" FontSize="16" FontAttributes="Bold" TextColor="#4ECDC4" Margin="0,8,0,4" />
+                <CollectionView ItemsSource="{Binding Albums}" SelectionMode="None">
+                    <CollectionView.ItemsLayout>
+                        <GridItemsLayout Orientation="Vertical" Span="3" HorizontalItemSpacing="6" VerticalItemSpacing="6" />
+                    </CollectionView.ItemsLayout>
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 8" Stroke="Transparent" Padding="0">
+                                <VerticalStackLayout>
+                                    <BoxView HeightRequest="80" BackgroundColor="#252540" />
+                                    <VerticalStackLayout Padding="6,4">
+                                        <Label Text="{Binding Title}" FontSize="11" FontAttributes="Bold" TextColor="#E8EAED" LineBreakMode="TailTruncation" MaxLines="1" />
+                                        <Label Text="{Binding ArtistName}" FontSize="9" TextColor="#9AA0A6" LineBreakMode="TailTruncation" MaxLines="1" />
+                                    </VerticalStackLayout>
+                                </VerticalStackLayout>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <Label Text="Artists" FontSize="16" FontAttributes="Bold" TextColor="#FFE66D" Margin="0,8,0,4" />
+                <CollectionView ItemsSource="{Binding Artists}" SelectionMode="None">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 8" Stroke="Transparent" Padding="12" Margin="0,2">
+                                <Label Text="{Binding Name}" FontSize="14" FontAttributes="Bold" TextColor="#E8EAED" />
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <ActivityIndicator Grid.Row="1" IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" VerticalOptions="Center" />
+
+        <controls:MiniPlayerControl x:Name="MiniPlayer" Grid.Row="2" />
+    </Grid>
+</ContentPage>
