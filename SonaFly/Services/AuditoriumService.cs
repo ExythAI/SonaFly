@@ -135,6 +135,14 @@ public class AuditoriumService : IAsyncDisposable
             .WithUrl($"{baseUrl}/hubs/auditorium", options =>
             {
                 options.AccessTokenProvider = () => Task.FromResult<string?>(token);
+                // Bypass SSL cert validation for self-signed / dev certs
+                options.HttpMessageHandlerFactory = _ =>
+                {
+                    var handler = new HttpClientHandler();
+                    handler.ServerCertificateCustomValidationCallback =
+                        HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                    return handler;
+                };
             })
             .WithAutomaticReconnect()
             .Build();

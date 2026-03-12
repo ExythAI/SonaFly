@@ -85,8 +85,10 @@
                                    IsVisible="{Binding IsPlaying, Converter={StaticResource InvertBoolConverter}}" />
 
                             <!-- Progress bar -->
-                            <ProgressBar Progress="{Binding NowPlayingPosition}" IsVisible="{Binding IsPlaying}"
-                                         ProgressColor="#4ECDC4" BackgroundColor="#252540" />
+                            <Slider Minimum="0" Maximum="{Binding NowPlayingDuration}" Value="{Binding NowPlayingPosition}"
+                                    IsEnabled="False" IsVisible="{Binding IsPlaying}"
+                                    MinimumTrackColor="#4ECDC4" MaximumTrackColor="#252540"
+                                    ThumbColor="Transparent" />
                         </VerticalStackLayout>
                     </Border>
 

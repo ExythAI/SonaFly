@@ -31,7 +31,7 @@ public class AlbumsController : ControllerBase
             query = query.Where(a => a.AlbumArtistId == artistId.Value);
         var total = await query.CountAsync(ct);
         var items = await query
-            .OrderBy(a => a.SortTitle ?? a.Title)
+            .OrderBy(a => a.Year ?? int.MaxValue).ThenBy(a => a.SortTitle ?? a.Title)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(a => new AlbumDto(

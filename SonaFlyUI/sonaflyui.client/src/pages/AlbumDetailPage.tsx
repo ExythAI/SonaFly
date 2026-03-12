@@ -50,7 +50,7 @@ const AlbumDetailPage: React.FC = () => {
 
     return (
         <Box>
-            <IconButton onClick={() => navigate('/albums')} sx={{ mb: 2 }}><ArrowBack /></IconButton>
+            <IconButton onClick={() => navigate(-1)} sx={{ mb: 2 }}><ArrowBack /></IconButton>
 
             <Box sx={{ display: 'flex', gap: 3, mb: 4, flexDirection: { xs: 'column', sm: 'row' } }}>
                 {/* Album Cover */}
@@ -73,7 +73,16 @@ const AlbumDetailPage: React.FC = () => {
                     <Typography variant="caption" color="text.secondary" textTransform="uppercase" letterSpacing={1}>Album</Typography>
                     <Typography variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>{album.title}</Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                        {album.artistName && <Typography variant="body1" fontWeight={500}>{album.artistName}</Typography>}
+                        {album.artistName && album.albumArtistId && (
+                            <Typography variant="body1" fontWeight={500}
+                                sx={{ color: 'primary.light', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                                onClick={() => navigate(`/artists/${album.albumArtistId}`)}>
+                                {album.artistName}
+                            </Typography>
+                        )}
+                        {album.artistName && !album.albumArtistId && (
+                            <Typography variant="body1" fontWeight={500}>{album.artistName}</Typography>
+                        )}
                         {album.year && <Chip label={album.year} size="small" sx={{ height: 22 }} />}
                         {album.genreSummary && <Chip label={album.genreSummary} size="small" variant="outlined" sx={{ height: 22 }} />}
                         <Typography variant="body2" color="text.secondary">

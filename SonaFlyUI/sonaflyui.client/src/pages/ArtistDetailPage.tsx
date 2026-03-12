@@ -56,7 +56,7 @@ const ArtistDetailPage: React.FC = () => {
         <Box>
             {/* Header */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-                <IconButton onClick={() => navigate('/artists')} sx={{ color: 'text.secondary' }}>
+                <IconButton onClick={() => navigate(-1)} sx={{ color: 'text.secondary' }}>
                     <ArrowBack />
                 </IconButton>
                 <Box sx={{

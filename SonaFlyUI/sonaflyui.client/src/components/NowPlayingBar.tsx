@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Typography, IconButton, Slider } from '@mui/material';
 import {
-    PlayArrow, Pause, Stop, SkipNext, SkipPrevious, VolumeUp, VolumeOff
+    PlayArrow, Pause, Stop, SkipNext, SkipPrevious, VolumeUp, VolumeOff,
+    KeyboardArrowDown, KeyboardArrowUp
 } from '@mui/icons-material';
 import { usePlayer } from './PlayerContext';
 import { artworkUrl } from '../api/client';
 
 const PLAYER_HEIGHT = 72;
+const MINI_PLAYER_HEIGHT = 36;
 
 const fmt = (s: number) => {
     if (!s || isNaN(s)) return '0:00';
@@ -19,20 +21,64 @@ const NowPlayingBar: React.FC = () => {
         currentTrack, isPlaying, currentTime, duration, volume,
         pause, resume, stop, seek, setVolume, next, previous, queue
     } = usePlayer();
+    const [minimized, setMinimized] = useState(false);
 
     if (!currentTrack) return null;
 
     const currentIdx = queue.findIndex(t => t.id === currentTrack.id);
     const hasPrev = currentIdx > 0;
     const hasNext = currentIdx >= 0 && currentIdx < queue.length - 1;
+    const progress = duration ? (currentTime / duration) * 100 : 0;
 
+    // Mini player — thin bar with progress, track name, play/pause, expand
+    if (minimized) {
+        return (
+            <Box sx={{
+                height: MINI_PLAYER_HEIGHT, flexShrink: 0,
+                bgcolor: 'rgba(18,18,24,0.95)',
+                borderTop: '1px solid rgba(255,255,255,0.06)',
+                display: 'flex', alignItems: 'center', px: 1.5, gap: 1,
+                position: 'relative',
+            }}>
+                {/* Progress bar at top edge */}
+                <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, bgcolor: 'rgba(255,255,255,0.06)' }}>
+                    <Box sx={{ height: '100%', width: `${progress}%`, bgcolor: 'primary.main', transition: 'width 0.3s linear' }} />
+                </Box>
+
+                {/* Artwork tiny */}
+                {currentTrack.artworkId && (
+                    <Box sx={{
+                        width: 24, height: 24, borderRadius: 0.5, overflow: 'hidden', flexShrink: 0,
+                    }}>
+                        <Box component="img" src={artworkUrl(currentTrack.artworkId)}
+                            sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </Box>
+                )}
+
+                {/* Track info */}
+                <Typography variant="caption" noWrap sx={{ color: '#E8EAED', flex: 1, minWidth: 0, fontSize: 12 }}>
+                    {currentTrack.title}
+                    <span style={{ color: '#9AA0A6' }}> · {currentTrack.artistName ?? 'Unknown'}</span>
+                </Typography>
+
+                {/* Mini controls */}
+                <Typography variant="caption" sx={{ color: '#9AA0A6', fontSize: 11 }}>{fmt(currentTime)}</Typography>
+                <IconButton size="small" onClick={isPlaying ? pause : resume} sx={{ p: 0.25 }}>
+                    {isPlaying ? <Pause sx={{ fontSize: 18, color: '#E8EAED' }} /> : <PlayArrow sx={{ fontSize: 18, color: '#E8EAED' }} />}
+                </IconButton>
+                <IconButton size="small" onClick={() => setMinimized(false)} sx={{ p: 0.25 }} title="Expand player">
+                    <KeyboardArrowUp sx={{ fontSize: 18, color: '#9AA0A6' }} />
+                </IconButton>
+            </Box>
+        );
+    }
+
+    // Full player
     return (
         <Box sx={{
-            position: 'fixed', bottom: 0, left: 0, right: 0, height: PLAYER_HEIGHT,
-            bgcolor: 'background.paper',
+            height: PLAYER_HEIGHT, flexShrink: 0,
             borderTop: '1px solid rgba(255,255,255,0.08)',
             display: 'flex', alignItems: 'center', px: 2, gap: 2,
-            zIndex: 1300,
             backdropFilter: 'blur(20px)',
             background: 'linear-gradient(180deg, rgba(30,30,40,0.97) 0%, rgba(18,18,24,0.99) 100%)',
         }}>
@@ -105,7 +151,7 @@ const NowPlayingBar: React.FC = () => {
                 </Box>
             </Box>
 
-            {/* Volume */}
+            {/* Volume + Minimize */}
             <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 0.5, minWidth: 140 }}>
                 <IconButton size="small" onClick={() => setVolume(volume === 0 ? 1 : 0)}
                     sx={{ color: '#9AA0A6' }}>
@@ -123,8 +169,11 @@ const NowPlayingBar: React.FC = () => {
                     }}
                 />
             </Box>
+            <IconButton size="small" onClick={() => setMinimized(true)} sx={{ color: '#9AA0A6', ml: -1 }} title="Minimize player">
+                <KeyboardArrowDown fontSize="small" />
+            </IconButton>
         </Box>
     );
 };
 
-export { NowPlayingBar, PLAYER_HEIGHT };
+export { NowPlayingBar, PLAYER_HEIGHT, MINI_PLAYER_HEIGHT };

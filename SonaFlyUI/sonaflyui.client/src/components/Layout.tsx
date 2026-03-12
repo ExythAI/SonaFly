@@ -9,7 +9,7 @@ import {
     Search, Settings, Menu as MenuIcon, Logout, Album, MusicNote, Block as BlockIcon, MeetingRoom
 } from '@mui/icons-material';
 import { useAuth } from '../auth/AuthContext';
-import { NowPlayingBar, PLAYER_HEIGHT } from './NowPlayingBar';
+import { NowPlayingBar, PLAYER_HEIGHT, MINI_PLAYER_HEIGHT } from './NowPlayingBar';
 import { usePlayer } from './PlayerContext';
 
 const drawerWidth = 260;
@@ -96,7 +96,7 @@ const Layout: React.FC = () => {
     );
 
     return (
-        <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+        <Box sx={{ display: 'flex', height: '100vh', bgcolor: 'background.default', overflow: 'hidden' }}>
             <AppBar position="fixed" sx={{
                 display: { md: 'none' },
                 bgcolor: 'background.paper',
@@ -117,15 +117,17 @@ const Layout: React.FC = () => {
                     {drawer}
                 </Drawer>
             </Box>
-            <Box component="main" sx={{
-                flexGrow: 1, p: { xs: 2, md: 3 },
-                mt: { xs: 8, md: 0 },
-                pb: currentTrack ? `${PLAYER_HEIGHT + 16}px` : undefined,
-                maxWidth: { md: `calc(100% - ${drawerWidth}px)` }
-            }}>
-                <Outlet />
+            {/* Right column: scrollable content + player footer */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0, height: '100vh' }}>
+                <Box component="main" sx={{
+                    flexGrow: 1, overflow: 'auto',
+                    p: { xs: 2, md: 3 },
+                    mt: { xs: 8, md: 0 },
+                }}>
+                    <Outlet />
+                </Box>
+                <NowPlayingBar />
             </Box>
-            <NowPlayingBar />
         </Box>
     );
 };
