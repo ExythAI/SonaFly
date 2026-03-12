@@ -103,14 +103,20 @@ public partial class AuditoriumViewModel : ObservableObject
             _player.Stop();
 
             var state = await _auditorium.JoinAsync(room.Id);
-            if (state == null) { StatusMessage = "Failed to join."; return; }
+            if (state == null)
+            {
+                // Keep the detailed error from the service if already set
+                if (string.IsNullOrEmpty(StatusMessage))
+                    StatusMessage = "Failed to join — unknown error.";
+                return;
+            }
 
             IsInRoom = true;
             RoomName = room.Name;
             ApplyState(state);
             StartPositionTimer();
         }
-        catch (Exception ex) { StatusMessage = ex.Message; }
+        catch (Exception ex) { StatusMessage = $"Exception: {ex.Message}"; }
         finally { IsBusy = false; }
     }
 
