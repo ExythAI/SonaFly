@@ -33,12 +33,9 @@ public class AuditoriumService : IAsyncDisposable
     {
         try
         {
-            ErrorOccurred?.Invoke($"Connecting to hub...");
             await EnsureConnectedAsync();
-            ErrorOccurred?.Invoke($"Connected. Joining room {auditoriumId}...");
             var state = await _hub!.InvokeAsync<AuditoriumStateDto>("JoinAuditorium", auditoriumId);
             _currentAuditoriumId = auditoriumId;
-            ErrorOccurred?.Invoke(null!);
             return state;
         }
         catch (Exception ex)
@@ -137,8 +134,6 @@ public class AuditoriumService : IAsyncDisposable
 
         var baseUrl = _api.BaseUrl?.TrimEnd('/') ?? "";
         var hubUrl = $"{baseUrl}/hubs/auditorium";
-
-        ErrorOccurred?.Invoke($"Hub URL: {hubUrl}");
 
         _hub = new HubConnectionBuilder()
             .WithUrl(hubUrl, options =>
