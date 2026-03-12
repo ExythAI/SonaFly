@@ -14,16 +14,18 @@ public class AuditoriumHub : Hub
     private readonly AuditoriumStateService _state;
     private readonly SonaFlyDbContext _db;
     private readonly ILogger<AuditoriumHub> _logger;
+    private readonly TrackEndSchedulerService _scheduler;
 
     // Tracks which auditorium each connection is in
     private static readonly Dictionary<string, Guid> _connectionRooms = new();
     private static readonly object _connLock = new();
 
-    public AuditoriumHub(AuditoriumStateService state, SonaFlyDbContext db, ILogger<AuditoriumHub> logger)
+    public AuditoriumHub(AuditoriumStateService state, SonaFlyDbContext db, ILogger<AuditoriumHub> logger, TrackEndSchedulerService scheduler)
     {
         _state = state;
         _db = db;
         _logger = logger;
+        _scheduler = scheduler;
     }
 
     private Guid UserId => Guid.Parse(Context.User!.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -90,7 +92,7 @@ public class AuditoriumHub : Hub
         // Schedule auto-advance when track ends
         if (track.DurationSeconds.HasValue)
         {
-            _ = ScheduleTrackEnd(auditoriumId, trackId, track.DurationSeconds.Value);
+            _scheduler.ScheduleTrackEnd(auditoriumId, trackId, track.DurationSeconds.Value);
         }
     }
 
@@ -247,9 +249,10 @@ public class AuditoriumHub : Hub
             _logger.LogInformation("Auditorium {Id}: auto-advancing to '{Title}'", auditoriumId, track.Title);
 
             await Clients.Group($"aud-{auditoriumId}").SendAsync("OnTrackStarted", room.ToSnapshot());
+            await Clients.Group($"aud-{auditoriumId}").SendAsync("OnQueueUpdated", room.Queue);
 
             if (track.DurationSeconds.HasValue)
-                _ = ScheduleTrackEnd(auditoriumId, track.Id, track.DurationSeconds.Value);
+                _scheduler.ScheduleTrackEnd(auditoriumId, track.Id, track.DurationSeconds.Value);
         }
         else
         {
@@ -258,17 +261,7 @@ public class AuditoriumHub : Hub
         }
     }
 
-    private async Task ScheduleTrackEnd(Guid auditoriumId, Guid trackId, double durationSeconds)
-    {
-        await Task.Delay(TimeSpan.FromSeconds(durationSeconds + 1)); // small buffer
 
-        var room = _state.GetRoom(auditoriumId);
-        if (room == null || room.CurrentTrackId != trackId) return; // already changed
-        if (room.IsPaused) return; // paused because empty — don't advance
-
-        room.StopPlayback();
-        await TryPlayNextFromQueue(room, auditoriumId);
-    }
 
     private (AuditoriumRoomState room, Guid auditoriumId) GetCurrentRoom()
     {

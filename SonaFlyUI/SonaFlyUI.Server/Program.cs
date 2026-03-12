@@ -121,6 +121,7 @@ builder.Services.AddScoped<IMixedTapeService, MixedTapeService>();
 
 // Auditorium
 builder.Services.AddSingleton<AuditoriumStateService>();
+builder.Services.AddSingleton<TrackEndSchedulerService>();
 builder.Services.AddSignalR();
 
 // ── Controllers + OpenAPI ──
