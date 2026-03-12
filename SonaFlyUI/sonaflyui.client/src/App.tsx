@@ -12,6 +12,7 @@ import LibraryRootsPage from './pages/LibraryRootsPage';
 import UsersPage from './pages/UsersPage';
 import { ArtistsPage, AlbumsPage, TracksPage } from './pages/BrowsePages';
 import AlbumDetailPage from './pages/AlbumDetailPage';
+import ArtistDetailPage from './pages/ArtistDetailPage';
 import SearchPage from './pages/SearchPage';
 import PlaylistsPage from './pages/PlaylistsPage';
 import MixedTapePage from './pages/MixedTapePage';
@@ -51,6 +52,7 @@ const App: React.FC = () => (
                             <Route path="library-roots" element={<AdminRoute><LibraryRootsPage /></AdminRoute>} />
                             <Route path="users" element={<AdminRoute><UsersPage /></AdminRoute>} />
                             <Route path="artists" element={<ArtistsPage />} />
+                            <Route path="artists/:id" element={<ArtistDetailPage />} />
                             <Route path="albums" element={<AlbumsPage />} />
                             <Route path="albums/:id" element={<AlbumDetailPage />} />
                             <Route path="tracks" element={<TracksPage />} />

@@ -5,12 +5,21 @@ import {
     DialogContent, DialogActions, Table, TableHead, TableRow, TableCell, TableBody,
     IconButton, Chip, CircularProgress
 } from '@mui/material';
-import { Add, Delete, Edit, PlayArrow } from '@mui/icons-material';
+import { Add, Delete, Edit, PlayArrow, Refresh } from '@mui/icons-material';
 import { libraryRootsApi } from '../api/client';
+
+const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 const LibraryRootsPage: React.FC = () => {
     const qc = useQueryClient();
-    const { data: roots, isLoading } = useQuery({ queryKey: ['library-roots'], queryFn: () => libraryRootsApi.getAll().then(r => r.data) });
+    const { data: roots, isLoading } = useQuery({
+        queryKey: ['library-roots'],
+        queryFn: () => libraryRootsApi.getAll().then(r => r.data),
+        refetchInterval: (query) => {
+            const data = query.state.data as any[];
+            return data?.some((r: any) => r.lastScanStatus === 'Running') ? 3000 : false;
+        },
+    });
     const [open, setOpen] = useState(false);
     const [form, setForm] = useState({ name: '', path: '' });
 
@@ -23,8 +32,11 @@ const LibraryRootsPage: React.FC = () => {
         onSuccess: () => qc.invalidateQueries({ queryKey: ['library-roots'] })
     });
     const scanMut = useMutation({
-        mutationFn: (id: string) => libraryRootsApi.triggerScan(id),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['library-roots'] })
+        mutationFn: ({ id, fullScan }: { id: string; fullScan: boolean }) => libraryRootsApi.triggerScan(id, fullScan),
+        onSuccess: async () => {
+            await delay(1000);
+            qc.invalidateQueries({ queryKey: ['library-roots'] });
+        }
     });
 
     if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
@@ -56,7 +68,8 @@ const LibraryRootsPage: React.FC = () => {
                                         color={root.lastScanStatus === 'Completed' ? 'success' : root.lastScanStatus === 'Running' ? 'warning' : 'error'} />}
                                 </TableCell>
                                 <TableCell align="right">
-                                    <IconButton size="small" title="Scan" onClick={() => scanMut.mutate(root.id)}><PlayArrow fontSize="small" /></IconButton>
+                                    <IconButton size="small" title="Quick Scan" onClick={() => scanMut.mutate({ id: root.id, fullScan: false })}><PlayArrow fontSize="small" /></IconButton>
+                                    <IconButton size="small" title="Full Scan (re-read all metadata)" onClick={() => scanMut.mutate({ id: root.id, fullScan: true })}><Refresh fontSize="small" /></IconButton>
                                     <IconButton size="small" title="Delete" onClick={() => deleteMut.mutate(root.id)} color="error"><Delete fontSize="small" /></IconButton>
                                 </TableCell>
                             </TableRow>

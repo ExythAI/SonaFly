@@ -21,15 +21,50 @@ public class TracksController : ControllerBase
 
     [HttpGet]
     public async Task<ActionResult<PaginatedResult<TrackListItemDto>>> GetAll(
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 50,
+        [FromQuery] string? sortBy = "title", [FromQuery] string? sortDir = "asc",
+        [FromQuery] string? filter = null, [FromQuery] Guid? artistId = null,
+        CancellationToken ct = default)
     {
         var query = _db.Tracks.AsNoTracking()
             .Where(t => t.IsIndexed && !t.IsMissing)
             .ApplyRestrictions(_db, CurrentUserId);
 
+        if (artistId.HasValue)
+            query = query.Where(t => t.PrimaryArtistId == artistId.Value);
+
+        // Filter
+        if (!string.IsNullOrWhiteSpace(filter))
+        {
+            var f = filter.ToLower();
+            query = query.Where(t =>
+                t.Title.ToLower().Contains(f) ||
+                (t.PrimaryArtist != null && t.PrimaryArtist.Name.ToLower().Contains(f)) ||
+                (t.Album != null && t.Album.Title.ToLower().Contains(f)) ||
+                (t.Genre != null && t.Genre.ToLower().Contains(f)));
+        }
+
         var total = await query.CountAsync(ct);
+
+        // Sort
+        var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        query = (sortBy?.ToLower()) switch
+        {
+            "artist" => desc ? query.OrderByDescending(t => t.PrimaryArtist != null ? t.PrimaryArtist.Name : "")
+                             : query.OrderBy(t => t.PrimaryArtist != null ? t.PrimaryArtist.Name : ""),
+            "album" => desc ? query.OrderByDescending(t => t.Album != null ? t.Album.Title : "")
+                            : query.OrderBy(t => t.Album != null ? t.Album.Title : ""),
+            "duration" => desc ? query.OrderByDescending(t => t.DurationSeconds)
+                               : query.OrderBy(t => t.DurationSeconds),
+            "genre" => desc ? query.OrderByDescending(t => t.Genre ?? "")
+                            : query.OrderBy(t => t.Genre ?? ""),
+            "tracknumber" => desc ? query.OrderByDescending(t => t.TrackNumber)
+                                  : query.OrderBy(t => t.TrackNumber),
+            _ => desc ? query.OrderByDescending(t => t.Title)
+                      : query.OrderBy(t => t.Title),
+        };
+
         var items = await query
-            .OrderBy(t => t.Title)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(t => new TrackListItemDto(

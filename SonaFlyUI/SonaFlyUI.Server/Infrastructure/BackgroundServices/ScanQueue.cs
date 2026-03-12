@@ -5,14 +5,14 @@ namespace SonaFlyUI.Server.Infrastructure.BackgroundServices;
 
 public class ScanQueue : IScanQueue
 {
-    private readonly Channel<Guid> _queue = Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions
+    private readonly Channel<ScanRequest> _queue = Channel.CreateUnbounded<ScanRequest>(new UnboundedChannelOptions
     {
         SingleReader = true
     });
 
-    public ValueTask EnqueueAsync(Guid libraryRootId, CancellationToken ct) =>
-        _queue.Writer.WriteAsync(libraryRootId, ct);
+    public ValueTask EnqueueAsync(ScanRequest request, CancellationToken ct) =>
+        _queue.Writer.WriteAsync(request, ct);
 
-    public ValueTask<Guid> DequeueAsync(CancellationToken ct) =>
+    public ValueTask<ScanRequest> DequeueAsync(CancellationToken ct) =>
         _queue.Reader.ReadAsync(ct);
 }

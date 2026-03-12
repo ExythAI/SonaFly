@@ -24,7 +24,9 @@ public class AlbumsController : ControllerBase
         [FromQuery] int page = 1, [FromQuery] int pageSize = 50,
         [FromQuery] Guid? artistId = null, CancellationToken ct = default)
     {
-        var query = _db.Albums.AsNoTracking().ApplyRestrictions(_db, CurrentUserId);
+        var query = _db.Albums.AsNoTracking()
+            .ApplyRestrictions(_db, CurrentUserId)
+            .Where(a => a.Tracks.Any(t => t.IsIndexed && !t.IsMissing));
         if (artistId.HasValue)
             query = query.Where(a => a.AlbumArtistId == artistId.Value);
         var total = await query.CountAsync(ct);
@@ -35,7 +37,7 @@ public class AlbumsController : ControllerBase
             .Select(a => new AlbumDto(
                 a.Id, a.Title,
                 a.AlbumArtist != null ? a.AlbumArtist.Name : null,
-                a.Year, a.ArtworkId, a.Tracks.Count
+                a.Year, a.ArtworkId, a.Tracks.Count(t => t.IsIndexed && !t.IsMissing)
             ))
             .ToListAsync(ct);
 
@@ -54,7 +56,7 @@ public class AlbumsController : ControllerBase
 
         var album = await _db.Albums.AsNoTracking()
             .Include(a => a.AlbumArtist)
-            .Include(a => a.Tracks.OrderBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber))
+            .Include(a => a.Tracks.Where(t => t.IsIndexed && !t.IsMissing).OrderBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber))
                 .ThenInclude(t => t.PrimaryArtist)
             .FirstOrDefaultAsync(a => a.Id == id, ct);
 

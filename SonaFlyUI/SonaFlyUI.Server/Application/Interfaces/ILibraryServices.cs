@@ -29,13 +29,15 @@ public interface IArtworkService
 
 public interface ILibraryIndexService
 {
-    Task<ScanJobDto> ScanLibraryRootAsync(Guid libraryRootId, CancellationToken ct);
+    Task<ScanJobDto> ScanLibraryRootAsync(Guid libraryRootId, bool fullScan, CancellationToken ct);
 }
+
+public record ScanRequest(Guid LibraryRootId, bool FullScan = false);
 
 public interface IScanQueue
 {
-    ValueTask EnqueueAsync(Guid libraryRootId, CancellationToken ct);
-    ValueTask<Guid> DequeueAsync(CancellationToken ct);
+    ValueTask EnqueueAsync(ScanRequest request, CancellationToken ct);
+    ValueTask<ScanRequest> DequeueAsync(CancellationToken ct);
 }
 
 public interface IStreamingService

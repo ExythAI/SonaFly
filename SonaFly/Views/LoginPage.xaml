@@ -25,6 +25,13 @@
                     <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" />
                 </VerticalStackLayout>
             </Border>
+
+            <Label Text="Change Server" FontSize="13" TextColor="#9AA0A6" TextDecorations="Underline"
+                   HorizontalTextAlignment="Center" Margin="0,8,0,0">
+                <Label.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding ChangeServerCommand}" />
+                </Label.GestureRecognizers>
+            </Label>
         </VerticalStackLayout>
     </Grid>
 </ContentPage>

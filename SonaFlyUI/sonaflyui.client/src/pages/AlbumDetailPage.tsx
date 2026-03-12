@@ -105,7 +105,7 @@ const AlbumDetailPage: React.FC = () => {
                                         background: isCurrent ? 'rgba(124,77,255,0.08)' : undefined,
                                     }}>
                                         <td style={{ padding: '10px 16px', color: isCurrent ? '#B388FF' : '#9AA0A6', fontSize: 13 }}>
-                                            {t.discNumber && album.tracks.length > 1 ? `${t.discNumber}-` : ''}{t.trackNumber ?? '—'}
+                                            {t.discNumber && (album.discCount ?? 1) > 1 ? `${t.discNumber}-` : ''}{t.trackNumber ?? '—'}
                                         </td>
                                         <td style={{ padding: '10px 16px', fontWeight: 500, fontSize: 14, color: isCurrent ? '#B388FF' : '#E8EAED' }}>{t.title}</td>
                                         <td style={{ padding: '10px 16px', fontSize: 13, color: '#9AA0A6' }}>{t.artistName ?? '—'}</td>

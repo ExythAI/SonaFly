@@ -59,4 +59,20 @@ public partial class LoginViewModel : ObservableObject
         }
         finally { IsBusy = false; }
     }
+
+    [RelayCommand]
+    private void ChangeServer()
+    {
+        if (Application.Current?.Windows.Count > 0)
+        {
+            var setupPage = Application.Current.Windows[0].Page?.Handler?.MauiContext?
+                .Services.GetRequiredService<Views.ServerSetupPage>();
+            if (setupPage != null)
+                Application.Current.Windows[0].Page = new NavigationPage(setupPage)
+                {
+                    BarBackgroundColor = Color.FromArgb("#0D0D1A"),
+                    BarTextColor = Color.FromArgb("#FFE66D")
+                };
+        }
+    }
 }

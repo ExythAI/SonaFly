@@ -56,13 +56,13 @@ public class LibraryRootsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/scan")]
-    public async Task<IActionResult> TriggerScan(Guid id, CancellationToken ct)
+    public async Task<IActionResult> TriggerScan(Guid id, [FromQuery] bool fullScan = false, CancellationToken ct = default)
     {
         // Verify root exists
         var root = await _libraryRootService.GetByIdAsync(id, ct);
         if (root == null) return NotFound();
 
-        await _scanQueue.EnqueueAsync(id, ct);
-        return Accepted(new { message = "Scan queued." });
+        await _scanQueue.EnqueueAsync(new SonaFlyUI.Server.Application.Interfaces.ScanRequest(id, fullScan), ct);
+        return Accepted(new { message = fullScan ? "Full scan queued." : "Scan queued." });
     }
 }

@@ -72,7 +72,7 @@ export const libraryRootsApi = {
     create: (data: any) => api.post('/library-roots', data),
     update: (id: string, data: any) => api.put(`/library-roots/${id}`, data),
     delete: (id: string) => api.delete(`/library-roots/${id}`),
-    triggerScan: (id: string) => api.post(`/library-roots/${id}/scan`),
+    triggerScan: (id: string, fullScan = false) => api.post(`/library-roots/${id}/scan?fullScan=${fullScan}`),
 };
 
 // ── Scans ──
@@ -87,7 +87,8 @@ export const browseApi = {
     artistById: (id: string) => api.get(`/artists/${id}`),
     albums: (page = 1, pageSize = 50, artistId?: string) => api.get(`/albums?page=${page}&pageSize=${pageSize}${artistId ? `&artistId=${artistId}` : ''}`),
     albumById: (id: string) => api.get(`/albums/${id}`),
-    tracks: (page = 1, pageSize = 50) => api.get(`/tracks?page=${page}&pageSize=${pageSize}`),
+    tracks: (page = 1, pageSize = 50, sortBy = 'title', sortDir = 'asc', filter = '', artistId = '') =>
+        api.get(`/tracks?page=${page}&pageSize=${pageSize}&sortBy=${sortBy}&sortDir=${sortDir}${filter ? `&filter=${encodeURIComponent(filter)}` : ''}${artistId ? `&artistId=${artistId}` : ''}`),
     trackById: (id: string) => api.get(`/tracks/${id}`),
     genres: () => api.get('/genres'),
     search: (q: string, limit = 10) => api.get(`/search?q=${encodeURIComponent(q)}&limit=${limit}`),

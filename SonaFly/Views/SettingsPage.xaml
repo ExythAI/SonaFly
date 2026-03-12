@@ -10,6 +10,59 @@
 
             <Label Text="⚙️ Settings" FontSize="24" FontAttributes="Bold" TextColor="#FFE66D" />
 
+            <!-- Current Server -->
+            <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 16" Stroke="Transparent" Padding="16">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="CONNECTED SERVER" FontSize="10" TextColor="#9AA0A6" CharacterSpacing="2" />
+
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                        <Label Text="{Binding ActiveServer.Name}" FontSize="16" FontAttributes="Bold" TextColor="#E8EAED" />
+                        <Label Grid.Row="1" Text="{Binding ActiveServer.BaseUrl}" FontSize="12" TextColor="#9AA0A6" />
+                        <Label Grid.Column="1" Grid.RowSpan="2" Text="●" FontSize="16" TextColor="#4ECDC4"
+                               VerticalTextAlignment="Center" />
+                    </Grid>
+
+                    <BoxView HeightRequest="1" BackgroundColor="#252540" Margin="0,4" />
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <Button Text="Log Out" BackgroundColor="#FF6B6B" TextColor="White"
+                                CornerRadius="12" FontSize="13" Padding="12,8"
+                                Command="{Binding LogoutCommand}" />
+                        <Button Grid.Column="1" Text="Add / Switch Server" BackgroundColor="#252540" TextColor="#FFE66D"
+                                CornerRadius="12" FontSize="13" Padding="12,8"
+                                Command="{Binding SwitchServerCommand}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Saved Servers (only show if more than 1) -->
+            <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 16" Stroke="Transparent" Padding="16">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="SAVED SERVERS" FontSize="10" TextColor="#9AA0A6" CharacterSpacing="2" />
+
+                    <CollectionView ItemsSource="{Binding Servers}" SelectionMode="None">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Border BackgroundColor="#252540" StrokeShape="RoundRectangle 10" Stroke="Transparent"
+                                        Padding="12,8" Margin="0,2">
+                                    <Grid ColumnDefinitions="*,Auto,Auto">
+                                        <VerticalStackLayout>
+                                            <Label Text="{Binding Name}" FontSize="14" FontAttributes="Bold" TextColor="#E8EAED" />
+                                            <Label Text="{Binding BaseUrl}" FontSize="11" TextColor="#9AA0A6" />
+                                        </VerticalStackLayout>
+
+                                        <Button Grid.Column="1" Text="✕" BackgroundColor="Transparent" TextColor="#FF6B6B"
+                                                FontSize="14" Padding="8,4" WidthRequest="36" HeightRequest="36"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.RemoveServerCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Border>
+
             <!-- Change Password -->
             <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 16" Stroke="Transparent" Padding="16">
                 <VerticalStackLayout Spacing="10">

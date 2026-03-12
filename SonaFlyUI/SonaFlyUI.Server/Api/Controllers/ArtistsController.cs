@@ -23,7 +23,11 @@ public class ArtistsController : ControllerBase
     public async Task<ActionResult<PaginatedResult<ArtistDto>>> GetAll(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
     {
-        var query = _db.Artists.AsNoTracking().ApplyRestrictions(_db, CurrentUserId);
+        var query = _db.Artists.AsNoTracking()
+            .ApplyRestrictions(_db, CurrentUserId)
+            .Where(a =>
+                a.PrimaryTracks.Any(t => t.IsIndexed && !t.IsMissing) ||
+                a.Albums.Any(alb => alb.Tracks.Any(t => t.IsIndexed && !t.IsMissing)));
         var total = await query.CountAsync(ct);
         var items = await query
             .OrderBy(a => a.SortName ?? a.Name)
@@ -31,7 +35,8 @@ public class ArtistsController : ControllerBase
             .Take(pageSize)
             .Select(a => new ArtistDto(
                 a.Id, a.Name, a.SortName, a.ArtworkId,
-                a.Albums.Count, a.PrimaryTracks.Count
+                a.Albums.Count(alb => alb.Tracks.Any(t => t.IsIndexed && !t.IsMissing)),
+                a.PrimaryTracks.Count(t => t.IsIndexed && !t.IsMissing)
             ))
             .ToListAsync(ct);
 
@@ -44,7 +49,9 @@ public class ArtistsController : ControllerBase
         var artist = await _db.Artists.AsNoTracking()
             .ApplyRestrictions(_db, CurrentUserId)
             .Where(a => a.Id == id)
-            .Select(a => new ArtistDto(a.Id, a.Name, a.SortName, a.ArtworkId, a.Albums.Count, a.PrimaryTracks.Count))
+            .Select(a => new ArtistDto(a.Id, a.Name, a.SortName, a.ArtworkId,
+                a.Albums.Count(alb => alb.Tracks.Any(t => t.IsIndexed && !t.IsMissing)),
+                a.PrimaryTracks.Count(t => t.IsIndexed && !t.IsMissing)))
             .FirstOrDefaultAsync(ct);
 
         return artist == null ? NotFound() : Ok(artist);

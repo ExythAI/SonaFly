@@ -48,16 +48,17 @@ public class LibraryScanBackgroundService : BackgroundService
         {
             try
             {
-                var libraryRootId = await _scanQueue.DequeueAsync(stoppingToken);
-                _logger.LogInformation("Starting scan for library root {LibraryRootId}", libraryRootId);
+                var request = await _scanQueue.DequeueAsync(stoppingToken);
+                _logger.LogInformation("Starting {ScanType} scan for library root {LibraryRootId}",
+                    request.FullScan ? "full" : "incremental", request.LibraryRootId);
 
                 using var scope = _scopeFactory.CreateScope();
                 var indexService = scope.ServiceProvider.GetRequiredService<ILibraryIndexService>();
-                var result = await indexService.ScanLibraryRootAsync(libraryRootId, stoppingToken);
+                var result = await indexService.ScanLibraryRootAsync(request.LibraryRootId, request.FullScan, stoppingToken);
 
                 _logger.LogInformation(
                     "Scan completed for library root {LibraryRootId}: {Status} — {FilesScanned} scanned, {FilesAdded} added, {FilesUpdated} updated, {FilesMissing} missing, {Errors} errors",
-                    libraryRootId, result.Status, result.FilesScanned, result.FilesAdded,
+                    request.LibraryRootId, result.Status, result.FilesScanned, result.FilesAdded,
                     result.FilesUpdated, result.FilesMissing, result.ErrorsCount);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

@@ -34,7 +34,7 @@ public class LibraryIndexService : ILibraryIndexService
         _logger = logger;
     }
 
-    public async Task<ScanJobDto> ScanLibraryRootAsync(Guid libraryRootId, CancellationToken ct)
+    public async Task<ScanJobDto> ScanLibraryRootAsync(Guid libraryRootId, bool fullScan, CancellationToken ct)
     {
         var libraryRoot = await _db.LibraryRoots.FindAsync([libraryRootId], ct)
             ?? throw new KeyNotFoundException($"Library root {libraryRootId} not found.");
@@ -80,8 +80,9 @@ public class LibraryIndexService : ILibraryIndexService
                 {
                     if (existingTracks.TryGetValue(file.FilePath, out var existing))
                     {
-                        // Incremental: skip if not changed
-                        if (existing.FileSizeBytes == file.FileSizeBytes &&
+                        // Incremental: skip if not changed (unless full scan)
+                        if (!fullScan &&
+                            existing.FileSizeBytes == file.FileSizeBytes &&
                             existing.ModifiedUtcSource == file.LastModifiedUtc)
                         {
                             continue;
@@ -150,7 +151,51 @@ public class LibraryIndexService : ILibraryIndexService
 
         await _db.SaveChangesAsync(ct);
 
+        // Clean up orphaned entities (artists, albums, genres with no indexed tracks)
+        if (scanJob.Status == ScanStatus.Completed)
+        {
+            await CleanupOrphansAsync(ct);
+        }
+
         return MapScanJob(scanJob, libraryRoot.Name);
+    }
+
+    private async Task CleanupOrphansAsync(CancellationToken ct)
+    {
+        // Remove albums with no indexed (non-missing) tracks
+        var orphanAlbums = await _db.Albums
+            .Where(a => !_db.Tracks.Any(t => t.AlbumId == a.Id && t.IsIndexed && !t.IsMissing))
+            .ToListAsync(ct);
+        if (orphanAlbums.Count > 0)
+        {
+            _logger.LogInformation("Removing {Count} orphaned albums", orphanAlbums.Count);
+            _db.Albums.RemoveRange(orphanAlbums);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // Remove artists with no indexed tracks (neither as primary artist nor as album artist)
+        var orphanArtists = await _db.Artists
+            .Where(a =>
+                !_db.Tracks.Any(t => t.PrimaryArtistId == a.Id && t.IsIndexed && !t.IsMissing) &&
+                !_db.Albums.Any(alb => alb.AlbumArtistId == a.Id))
+            .ToListAsync(ct);
+        if (orphanArtists.Count > 0)
+        {
+            _logger.LogInformation("Removing {Count} orphaned artists", orphanArtists.Count);
+            _db.Artists.RemoveRange(orphanArtists);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // Remove genres with no track-genre links
+        var orphanGenres = await _db.Genres
+            .Where(g => !_db.TrackGenres.Any(tg => tg.GenreId == g.Id))
+            .ToListAsync(ct);
+        if (orphanGenres.Count > 0)
+        {
+            _logger.LogInformation("Removing {Count} orphaned genres", orphanGenres.Count);
+            _db.Genres.RemoveRange(orphanGenres);
+            await _db.SaveChangesAsync(ct);
+        }
     }
 
     private async Task CreateTrackAsync(Guid libraryRootId, AudioMetadata metadata, DiscoveredAudioFile file, CancellationToken ct)
