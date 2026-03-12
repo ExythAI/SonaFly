@@ -132,13 +132,19 @@ public class AuditoriumService : IAsyncDisposable
     {
         if (_hub != null && _hub.State == HubConnectionState.Connected) return;
 
+        // Refresh the token before connecting to ensure it's not expired
+        await _api.TryRefreshTokenAsync();
+
         var baseUrl = _api.BaseUrl?.TrimEnd('/') ?? "";
-        var token = _api.AccessToken ?? "";
+        var hubUrl = $"{baseUrl}/hubs/auditorium";
+
+        ErrorOccurred?.Invoke($"Hub URL: {hubUrl}");
 
         _hub = new HubConnectionBuilder()
-            .WithUrl($"{baseUrl}/hubs/auditorium", options =>
+            .WithUrl(hubUrl, options =>
             {
-                options.AccessTokenProvider = () => Task.FromResult<string?>(token);
+                // Dynamic token provider — always gets the latest token
+                options.AccessTokenProvider = () => Task.FromResult<string?>(_api.AccessToken);
                 // Bypass SSL cert validation for self-signed / dev certs
                 options.HttpMessageHandlerFactory = _ =>
                 {
@@ -147,6 +153,9 @@ public class AuditoriumService : IAsyncDisposable
                         HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
                     return handler;
                 };
+                // Enable LongPolling fallback — WebSocket upgrade can fail on some networks
+                options.Transports = Microsoft.AspNetCore.Http.Connections.HttpTransportType.WebSockets
+                                   | Microsoft.AspNetCore.Http.Connections.HttpTransportType.LongPolling;
             })
             .WithAutomaticReconnect()
             .Build();
@@ -183,7 +192,7 @@ public class AuditoriumService : IAsyncDisposable
         catch (Exception ex)
         {
             var inner = ex.InnerException?.InnerException?.Message ?? ex.InnerException?.Message ?? ex.Message;
-            throw new Exception($"Hub connection failed to {baseUrl}/hubs/auditorium: {inner}", ex);
+            throw new Exception($"Hub connection failed to {hubUrl}: {inner}", ex);
         }
     }
 
