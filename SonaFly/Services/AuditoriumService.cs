@@ -33,14 +33,18 @@ public class AuditoriumService : IAsyncDisposable
     {
         try
         {
+            ErrorOccurred?.Invoke($"Connecting to hub...");
             await EnsureConnectedAsync();
+            ErrorOccurred?.Invoke($"Connected. Joining room {auditoriumId}...");
             var state = await _hub!.InvokeAsync<AuditoriumStateDto>("JoinAuditorium", auditoriumId);
             _currentAuditoriumId = auditoriumId;
+            ErrorOccurred?.Invoke(null!);
             return state;
         }
         catch (Exception ex)
         {
-            ErrorOccurred?.Invoke(ex.Message);
+            var msg = ex.InnerException?.Message ?? ex.Message;
+            ErrorOccurred?.Invoke($"Join failed: {msg}");
             return null;
         }
     }
@@ -172,7 +176,15 @@ public class AuditoriumService : IAsyncDisposable
             }
         };
 
-        await _hub.StartAsync();
+        try
+        {
+            await _hub.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            var inner = ex.InnerException?.InnerException?.Message ?? ex.InnerException?.Message ?? ex.Message;
+            throw new Exception($"Hub connection failed to {baseUrl}/hubs/auditorium: {inner}", ex);
+        }
     }
 
     public async ValueTask DisposeAsync()
