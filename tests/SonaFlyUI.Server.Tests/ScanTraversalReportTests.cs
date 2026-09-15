@@ -20,4 +20,34 @@ public sealed class ScanTraversalReportTests
         Assert.False(report.CanVouchForAbsenceOf(inaccessibleFile));
         Assert.True(report.CanVouchForAbsenceOf(otherFile));
     }
+
+    [Fact]
+    public void ATraversedParentConfirmsThatADeletedChildDirectoryIsAbsent()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sonafly-report");
+        var deletedTrack = Path.Combine(root, "deleted-album", "song.mp3");
+        var report = new ScanTraversalReport();
+
+        report.MarkRootAvailable(true);
+        report.MarkDirectoryTraversed(root);
+
+        Assert.True(report.CanVouchForAbsenceOf(deletedTrack));
+    }
+
+    [Fact]
+    public void FailedOrSkippedSubtreesOverrideATraversedAncestor()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sonafly-report");
+        var failed = Path.Combine(root, "offline-album");
+        var skipped = Path.Combine(root, "linked-album");
+        var report = new ScanTraversalReport();
+
+        report.MarkRootAvailable(true);
+        report.MarkDirectoryTraversed(root);
+        report.RecordDirectoryFailure(failed, "Network error");
+        report.MarkDirectoryUnverified(skipped);
+
+        Assert.False(report.CanVouchForAbsenceOf(Path.Combine(failed, "song.mp3")));
+        Assert.False(report.CanVouchForAbsenceOf(Path.Combine(skipped, "song.mp3")));
+    }
 }

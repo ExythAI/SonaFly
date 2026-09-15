@@ -74,7 +74,7 @@ public class FileScanner : IFileScanner
             {
                 // Unverified subtree: we do not know what is in here, so nothing below it
                 // may be reconciled as deleted.
-                report.RecordFailure(directory, ex.Message);
+                report.RecordDirectoryFailure(directory, ex.Message);
                 continue;
             }
 
@@ -83,7 +83,12 @@ public class FileScanner : IFileScanner
             foreach (var subdirectory in subdirectories)
             {
                 if (IsReparsePoint(subdirectory))
+                {
+                    // This scanner deliberately does not traverse links/junctions. Treat their
+                    // contents as unknown so ancestor reconciliation cannot declare them gone.
+                    report.MarkDirectoryUnverified(subdirectory);
                     continue;
+                }
                 pending.Push(FileSystemPaths.NormalizeForComparison(subdirectory));
             }
 
