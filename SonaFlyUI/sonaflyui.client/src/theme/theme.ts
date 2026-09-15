@@ -9,9 +9,9 @@ const theme = createTheme({
             dark: '#651FFF',
         },
         secondary: {
-            main: '#00E5FF',
-            light: '#18FFFF',
-            dark: '#00B8D4',
+            main: '#A59AC8',
+            light: '#C7BFDD',
+            dark: '#76698F',
         },
         background: {
             default: '#0A0E17',
@@ -28,7 +28,7 @@ const theme = createTheme({
     },
     typography: {
         fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-        h4: { fontWeight: 700, letterSpacing: '-0.02em' },
+        h4: { fontWeight: 700, letterSpacing: '-0.035em', fontSize: 'clamp(1.6rem, 3vw, 2.1rem)' },
         h5: { fontWeight: 600, letterSpacing: '-0.01em' },
         h6: { fontWeight: 600 },
         subtitle1: { fontWeight: 500 },
@@ -36,6 +36,14 @@ const theme = createTheme({
     },
     shape: { borderRadius: 12 },
     components: {
+        MuiCssBaseline: { styleOverrides: {
+            'html': { colorScheme: 'dark' },
+            '*': { scrollbarWidth: 'thin', scrollbarColor: '#424857 transparent' },
+            ':focus-visible': { outline: '2px solid #B388FF', outlineOffset: 3 },
+            'img': { maxWidth: '100%' },
+            '@media (prefers-reduced-motion: reduce)': { '*': { transition: 'none !important', animation: 'none !important' } },
+        } },
+        MuiCardActionArea: { styleOverrides: { root: { '&:hover': { backgroundColor: 'rgba(124,77,255,.06)' } } } },
         MuiPaper: {
             styleOverrides: {
                 root: {
@@ -63,10 +71,7 @@ const theme = createTheme({
                 root: {
                     border: '1px solid rgba(255,255,255,0.06)',
                     transition: 'border-color 0.2s, box-shadow 0.2s',
-                    '&:hover': {
-                        borderColor: 'rgba(124, 77, 255, 0.3)',
-                        boxShadow: '0 4px 20px rgba(124, 77, 255, 0.15)',
-                    },
+
                 },
             },
         },

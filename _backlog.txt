@@ -1,0 +1,1057 @@
+SonaFly Engineering Backlog
+===========================
+
+IMPLEMENTATION PASS - 2026-09-14 (scan integrity, purge, access consistency)
+----------------------------------------------------------------------------
+N13-N22 are RESOLVED; see the STATUS paragraph on each. Verification: 219 server/mobile/host
+tests pass (192 pre-existing plus 27 new in ScanIntegrityTests and LibraryAdministrationTests),
+0 failed/skipped, .NET 10 with SkipSpaBuild=true; the web client typechecks clean.
+
+NOT verified in this pass, and still outstanding:
+- No real music folder was scanned, and no Docker/TLS/device validation was performed.
+- No dependency vulnerability audit (N08 remains as previously recorded).
+- N11's Docker/TLS smoke steps still have never been executed.
+- N23-N25 remain PROPOSED optional upgrades, untouched.
+
+One migration was added: 20260915020649_AddScanJobFilesUnverified.
+Behaviour changes worth noting before deploying: ScanStatus gained a Partial member (appended,
+so existing ordinals are unchanged); /api/library-roots/{id}/scan now returns a scanJobId and
+409/503 in new cases; /api/system/status is restriction-aware for non-admins; auditorium
+playback now refuses tracks whose file is absent from disk.
+
+
+LATEST SERVER REVIEW - 2026-09-14
+--------------------------------
+Current priorities: N13-N16 (scan integrity and purge), then N17-N22 (server
+reliability/access consistency). N23-N25 are optional upgrades, not release blockers.
+N01-N12 retain the preceding developer's completion notes; this pass concentrated
+on server scanning, storage, playback and API behavior rather than re-auditing
+every previously closed item. Historical summaries below describe earlier passes.
+
+Verification in this pass: 186 server/mobile/host tests passed, 0 failed/skipped,
+using .NET 10 via C:/Program Files/dotnet/dotnet.exe with SkipSpaBuild=true and
+--no-restore. This does NOT constitute a fresh dependency vulnerability audit.
+New findings below are source-confirmed unless explicitly labeled an upgrade;
+their described failure scenarios still need dedicated regression tests. No actual
+music folders were scanned, purged, or modified. Docker/TLS/device validation was
+not performed. This review changes only this backlog.
+
+REVIEW UPDATE - 2026-09-14
+--------------------------
+Reviewed the current working tree and updated README, not just the previous diff.
+Six original items are resolved; six remain partial and link to actionable work
+below. Original Problem/Fix text is retained as history: the STATUS paragraph on
+each item is authoritative. RESOLVED means the original implementation gap is
+closed based on source inspection and the checks noted below; it is not a claim
+that device, Docker, or live TLS tests were run.
+
+New/open follow-ups: N01-N12 near the end of this file. Prioritize N01-N04 and N09.
+Do not implement an old Suggested fix again when its STATUS says RESOLVED.
+
+
+REVIEW UPDATE - 2026-09-14 (second pass)
+----------------------------------------
+N01-N10 and N12 are addressed; N11 is implemented but its Docker/TLS steps have never
+been executed, because this environment has no Docker. See each item's STATUS below,
+which is authoritative over the Fix/Acceptance text above it.
+
+Verified in this pass: 170 server tests, 19 Node client tests and 23 vitest tests pass;
+web lint, typecheck and production build pass; the MAUI Windows target builds in Release;
+`dotnet list package --vulnerable --include-transitive` reports nothing; the EF migration
+check reports no pending model changes. Where a fix guards a race, the new tests were run
+against the previous implementation first and confirmed to fail.
+
+Not verified here: anything needing Docker, a device, or live TLS.
+
+Purpose
+-------
+This file is a handoff for another development AI. Address the items in priority
+order. Preserve unrelated working-tree changes and add regression tests with each
+fix. The current repository has substantial uncommitted work, so inspect the diff
+before editing overlapping files.
+
+
+P1 - Remove the known production administrator password
+-------------------------------------------------------
+
+STATUS: RESOLVED. AdminBootstrap generates a random password when Production has
+no configured password, rejects the known dev credential, and validates configured
+passwords. IdentitySeeder sets MustChangePassword for generated credentials;
+middleware and the web change-password page enforce the flow. Login lockout and
+rate limiting are enabled. AdminBootstrapTests pass. The old acceptance criterion
+rejecting an absent password is superseded by the implemented random-password flow.
+Mobile onboarding still needs N05; do not reintroduce a shared production password.
+
+Problem:
+Program.cs creates the initial administrator with the fallback password
+"Admin123!". That password is also published in README.md and
+docker/.env.example. AuthController disables login lockout. A newly exposed
+installation can be taken over before the owner changes the password.
+
+Affected files:
+- SonaFlyUI/SonaFlyUI.Server/Program.cs
+- SonaFlyUI/SonaFlyUI.Server/Api/Controllers/AuthController.cs
+- docker/.env.example
+- README.md
+
+Suggested fix:
+1. In Production, require SonaFly:AdminDefaultPassword to be present, non-empty,
+   accepted by the configured Identity password validator, and different from the
+   documented development value. Refuse startup with a clear error otherwise.
+2. Prefer generating a cryptographically random one-time password on first boot,
+   displaying it once in local container logs, and requiring a password change at
+   first login. Do not retain or document a universal credential.
+3. Enable Identity lockoutOnFailure and configure a reasonable threshold and
+   duration. Consider endpoint rate limiting for login and refresh requests.
+4. Update deployment documentation and the environment example.
+
+Acceptance criteria:
+- A production instance cannot create an admin with Admin123! or an absent/blank
+  password.
+- Repeated invalid logins trigger lockout or rate limiting.
+- Development startup remains straightforward and clearly warns about dev-only
+  credentials.
+- Automated tests cover missing, blank, weak, and valid bootstrap passwords.
+
+
+P1 - Invalidate sessions when account security changes
+------------------------------------------------------
+
+STATUS: PARTIAL. Security-stamp claims, JWT account checks, a hub invocation filter,
+revocation on account changes, and refresh-family replay handling are implemented;
+SessionInvalidationTests pass. Rotation and revocation are not atomic against each
+other, however. Complete N02 before closing this security item.
+
+Problem:
+Access tokens contain identity and role claims but no security-stamp/session-version
+claim. Normal JWT validation does not recheck ApplicationUser.IsEnabled. Disabling,
+demoting, deleting, or resetting the password of a user therefore leaves an issued
+access token valid until expiry. Password changes and resets also do not revoke the
+user's existing refresh tokens.
+
+Affected files:
+- SonaFlyUI/SonaFlyUI.Server/Infrastructure/Identity/TokenService.cs
+- SonaFlyUI/SonaFlyUI.Server/Program.cs
+- SonaFlyUI/SonaFlyUI.Server/Api/Controllers/AuthController.cs
+- SonaFlyUI/SonaFlyUI.Server/Api/Controllers/UsersController.cs
+- SonaFlyUI/SonaFlyUI.Server/Domain/Entities/RefreshToken.cs
+
+Suggested fix:
+1. Put a security-stamp or explicit session-version claim in access tokens.
+2. Add JwtBearer OnTokenValidated logic (or a reusable authorization validator)
+   that rejects missing, deleted, disabled, or stamp-mismatched users. Cache short
+   term only if database traffic becomes material.
+3. Revoke all active refresh tokens for a user after password change/reset,
+   disable, deletion, or other account-compromise events.
+4. Decide whether a role change must immediately revoke sessions. If yes, rotate
+   the security stamp and refresh-token family during the role update.
+5. Detect reuse of a rotated refresh token and revoke its descendant token family.
+
+Acceptance criteria:
+- A disabled/deleted user receives 401 on the next API request and cannot use an
+  existing SignalR connection for commands.
+- A demoted admin immediately loses admin authorization when that is the selected
+  policy.
+- Old access and refresh tokens fail after password reset/change.
+- Tests cover REST, SignalR, refresh rotation, token replay, and stream tickets.
+
+
+P1 - Store browser and mobile credentials securely
+--------------------------------------------------
+
+STATUS: PARTIAL. The storage portion is resolved: web access tokens are in memory,
+refresh tokens use an HttpOnly/SameSite cookie, and mobile tokens use SecureStorage
+with legacy migration. Tests pass. Logout still has mobile/server and persistence
+races (N06); browser session restoration also needs N03. Cookie Secure follows the
+actual request scheme, so HTTPS deployment remains necessary.
+
+Problem:
+The web client stores access and refresh tokens in localStorage. The MAUI client
+serializes both tokens into Preferences. These stores are accessible to injected
+browser script or ordinary app preference/backup extraction and expose the
+seven-day refresh credential.
+
+Affected files:
+- SonaFlyUI/sonaflyui.client/src/api/client.ts
+- SonaFlyUI/sonaflyui.client/src/auth/AuthContext.tsx
+- SonaFly/Services/ServerStorageService.cs
+- SonaFly/Models/ServerConfig.cs
+- Authentication DTOs/controllers and tests
+
+Suggested fix:
+1. Web: keep the access token in memory and issue the refresh token as an
+   HttpOnly, Secure, SameSite cookie. Add CSRF protection to cookie-authenticated
+   mutation endpoints as required by the selected cookie policy.
+2. Mobile: store tokens with MAUI SecureStorage, keyed by server ID. Preferences
+   may retain non-secret server metadata only.
+3. Add a migration path that moves/removes existing plaintext tokens.
+4. Ensure logout clears server-side refresh state and all client-side secret stores.
+
+Acceptance criteria:
+- Refresh tokens are absent from localStorage, sessionStorage, serialized
+  preferences, and normal JavaScript-readable cookies.
+- Mobile tokens survive expected app restarts through SecureStorage.
+- Login, concurrent refresh, logout-during-refresh, and multi-server tests pass.
+
+
+P1 - Provide secure transport for deployment
+--------------------------------------------
+
+STATUS: PARTIAL. Caddy/TLS compose, forwarded-header configuration, security headers,
+and HTTPS/HSTS options are present; transport unit tests pass. Blank trusted-proxy
+entries can accidentally enable trust of all senders (N09). Live Caddy, TLS,
+WebSocket, range-stream and readiness behavior have not been exercised here.
+Add that smoke coverage under N11 and correct README inconsistencies under N12.
+
+Problem:
+The default Docker deployment exposes HTTP on port 8080 and the README recommends
+plain HTTP. Passwords, bearer tokens, refresh credentials, SignalR access tokens,
+and stream tickets can be intercepted on an untrusted network.
+
+Affected files:
+- docker/docker-compose.yml
+- SonaFlyUI/SonaFlyUI.Server/Dockerfile
+- README.md
+
+Suggested fix:
+1. Supply a documented TLS reverse-proxy example (Caddy, Traefik, or nginx) and
+   make HTTPS the recommended remote-access path.
+2. Configure forwarded headers and strict known proxies/networks correctly.
+3. Enable HSTS and HTTPS redirection when the application is served securely.
+4. Make clear that direct HTTP is for trusted local development only.
+5. Do not place long-lived secrets in query strings except where media/SignalR
+   browser APIs require scoped, short-lived tokens. Set an appropriate Referrer-
+   Policy and ensure URLs are not logged.
+
+Acceptance criteria:
+- The documented production setup serves HTTPS and supports SignalR WebSockets
+  and range-based audio streaming.
+- HTTP redirects to HTTPS in that setup.
+- Proxy and security-header behavior has an integration or smoke test.
+
+
+P2 - Apply content restrictions consistently to album details
+-------------------------------------------------------------
+
+STATUS: RESOLVED for the original album-detail/count defect. Album tracks now come
+from a restricted query, empty albums return 404, and artist/search projections were
+updated. AlbumRestrictionTests pass. The broader playlist/mixed-tape review revealed
+separate authorization and filtering gaps recorded in N01.
+
+Problem:
+AlbumsController.GetById verifies album visibility but includes every indexed,
+non-missing track. It does not apply track-level artist or genre restrictions.
+Album list track counts can likewise include tracks the user cannot access. The
+stream endpoint correctly denies those tracks, leaving metadata exposure and
+unplayable rows in the UI.
+
+Affected files:
+- SonaFlyUI/SonaFlyUI.Server/Api/Controllers/AlbumsController.cs
+- SonaFlyUI/SonaFlyUI.Server/Infrastructure/Services/RestrictionQueryExtensions.cs
+- Related controller tests
+
+Suggested fix:
+1. Build album-detail track DTOs from a separately restricted Track query, or
+   express the same restriction predicates in the filtered include/projection.
+2. Calculate album visibility and track counts using playable tracks after all
+   user restrictions.
+3. Review artist/search/playlist/mixed-tape endpoints for the same consistency.
+
+Acceptance criteria:
+- Restricted genres, artists, and albums never appear in album track lists or
+  counts for that user.
+- Direct stream access remains denied.
+- Tests cover albums containing a mixture of allowed and restricted tracks and
+  albums with no remaining playable tracks.
+
+
+P2 - Make user and role administration safe and atomic
+------------------------------------------------------
+
+STATUS: PARTIAL. Role allowlisting, checked Identity results, role-update transactions,
+self-disable/delete guards and a last-admin check exist; UserAdministrationTests pass.
+The last-admin check happens before the transaction and can race across requests.
+Complete N04. Sequential tests do not establish the concurrency invariant.
+
+Problem:
+UsersController accepts a role string, removes all current roles, adds the new
+role, and ignores Identity operation failures. An invalid role can leave a user
+roleless while the API returns success. Administrators can also disable/delete
+themselves or the last enabled administrator, permanently locking out management.
+
+Affected files:
+- SonaFlyUI/SonaFlyUI.Server/Api/Controllers/UsersController.cs
+- SonaFlyUI/sonaflyui.client/src/pages/UsersPage.tsx
+
+Suggested fix:
+1. Restrict role input to an explicit allowlist/enum and validate that the role
+   exists before changing anything.
+2. Check every IdentityResult and return a structured error on failure.
+3. Make profile and role changes transactional, or add the new role before
+   removing obsolete roles with compensating behavior on failure.
+4. Reject operations that would disable, delete, or demote the last enabled admin.
+5. Consider explicitly prohibiting self-delete/self-disable in the UI and API.
+
+Acceptance criteria:
+- Invalid roles return 400 and do not change current roles.
+- The system always retains at least one enabled administrator.
+- Partial Identity failures do not return success or leave half-applied state.
+- Server-side tests cover direct API calls rather than relying on UI validation.
+
+
+P2 - Prevent cross-server credential leakage in the MAUI client
+--------------------------------------------------------------
+
+STATUS: RESOLVED for the original transport defect. ServerSnapshot binds requests,
+headers, refresh retries and stream-URL resolution to the original host. Shared
+DefaultRequestHeaders mutation is gone and messages/responses are disposed.
+MobileClientTests pass. Credential persistence/logout is a separate N06 follow-up.
+
+Problem:
+SonaFlyApiClient.ApplyAuth mutates HttpClient.DefaultRequestHeaders and request
+methods read BaseUrl separately. If the active server changes while requests are
+in flight, a token from one configured server can be sent to another server.
+Default header mutation is also unsafe for overlapping requests with different
+server/session snapshots.
+
+Affected files:
+- SonaFly/Services/SonaFlyApiClient.cs
+- SonaFly/Services/ServerStorageService.cs
+- tests/SonaFlyUI.Server.Tests/MobileClientTests.cs
+
+Suggested fix:
+1. At the start of each logical request, capture one immutable snapshot containing
+   server ID, base URL, access token, and refresh token/version.
+2. Construct HttpRequestMessage explicitly and set Authorization on that message;
+   never mutate HttpClient.DefaultRequestHeaders for per-account credentials.
+3. Bind retry and refresh operations to the same server ID. If the active server
+   changes, cancel or fail the old operation rather than retargeting it.
+4. Dispose HttpRequestMessage and HttpResponseMessage instances consistently.
+
+Acceptance criteria:
+- A concurrency test switches active servers during a request and proves that no
+  token is delivered to the wrong host.
+- Concurrent refresh still performs one rotation per server/session.
+- Stream URLs are resolved against the server that issued the ticket.
+
+
+P2 - Fix the Docker health check and harden the runtime image
+------------------------------------------------------------
+
+STATUS: RESOLVED in implementation. Runtime now installs curl, uses APP_UID,
+owns data directories appropriately, and probes a real database health check.
+HealthCheckTests pass. CI contains image/health/non-root checks, but Docker is not
+available in this review shell, so their execution is not independently verified.
+An upgrade from old root-owned volumes still needs a deployment smoke check (N11).
+
+Problem:
+The runtime image invokes curl in HEALTHCHECK, but curl is installed only in the
+discarded build stage. Standard slim ASP.NET runtime images do not provide it.
+The container also runs as root, despite parsing media supplied from mounted
+storage. The health endpoint only reports that the process can answer and does
+not verify database availability.
+
+Affected files:
+- SonaFlyUI/SonaFlyUI.Server/Dockerfile
+- SonaFlyUI/SonaFlyUI.Server/Api/Controllers/SystemController.cs
+- docker/docker-compose.yml
+
+Suggested fix:
+1. Install the probe tool in the runtime stage, use a tool already guaranteed by
+   the selected image, or implement a small framework-dependent health probe.
+2. Register ASP.NET health checks and include at least SQLite readiness.
+3. Run as a dedicated non-root user and grant write access only to required data
+   directories. Keep music mounts read-only.
+4. Pin base images by an intentional version/digest update policy.
+
+Acceptance criteria:
+- A built container becomes healthy after startup and unhealthy when the database
+  is unavailable.
+- The application process runs as non-root and can still write its DB/artwork.
+- The audio library remains mounted read-only.
+
+
+P2 - Preserve Data Protection keys for stream tickets
+-----------------------------------------------------
+
+STATUS: RESOLVED. DataProtectionSetup uses persistent keys and stable application
+name SonaFly; both compose files mount sonafly_keys. Persistence/isolation tests
+pass. At-rest encryption is explicitly an operator responsibility in the README.
+Isolation between SonaFly deployments requires separate key rings: the fixed name
+does not distinguish two deployments sharing the same keys. See N12 for wording.
+
+Problem:
+StreamTicketService uses ASP.NET Data Protection, but Docker does not mount or
+configure a persistent key ring. Recreating the container invalidates every
+outstanding stream URL, and multiple replicas would be unable to validate one
+another's tickets.
+
+Affected files:
+- SonaFlyUI/SonaFlyUI.Server/Program.cs
+- SonaFlyUI/SonaFlyUI.Server/Infrastructure/Services/StreamTicketService.cs
+- docker/docker-compose.yml
+
+Suggested fix:
+1. Persist Data Protection keys in a protected Docker volume or external key
+   store and set a stable application name.
+2. Protect the key ring at rest where the deployment environment supports it.
+3. Keep ticket scope limited to one user/track and retain expiration, account,
+   security-stamp, and restriction checks.
+
+Acceptance criteria:
+- A valid ticket survives an ordinary container replacement until its expiry.
+- A ticket generated by one replica validates on another replica sharing keys.
+- Tickets from a different application/deployment remain invalid.
+
+
+P3 - Align auditorium playback with per-user restrictions
+---------------------------------------------------------
+
+STATUS: PARTIAL. The documented product rule permits per-listener unavailability;
+CanPlayCurrentTrack and the web notice implement it, and server restriction tests
+pass. The new async client check can apply obsolete track snapshots or restart
+playback after a disconnect. Complete N07 before closing this item.
+
+Problem:
+The auditorium accepts a queued track based on the queuing user's restrictions,
+and auto-advance checks that same user. Each listener's stream request correctly
+rechecks their own restrictions, so a room can select music that some connected
+listeners cannot play. Those clients display a playback error while the room
+continues.
+
+Affected files:
+- SonaFlyUI/SonaFlyUI.Server/Api/Hubs/AuditoriumHub.cs
+- SonaFlyUI/SonaFlyUI.Server/Infrastructure/Services/TrackEndSchedulerService.cs
+- SonaFlyUI/sonaflyui.client/src/components/AuditoriumContext.tsx
+
+Suggested fix:
+Choose and document a product rule. Options include:
+- Only allow tracks playable by every active listener.
+- Give rooms their own restriction policy.
+- Allow partial playback but show an intentional "unavailable for your account"
+  state rather than a generic stream error.
+
+Add tests for listeners with different artist, album, and genre restrictions.
+
+
+P3 - Improve frontend maintainability and loading performance
+------------------------------------------------------------
+
+STATUS: RESOLVED for the requested cleanup. Shared API DTOs replace explicit any,
+routes and SignalR are lazy-loaded, vendor chunks are split, and lint now enforces
+zero warnings. Typecheck, lint and build pass. Main app chunk is 71.18 kB; largest
+chunk is MUI at 350.51 kB (uncompressed). These are chunk sizes, not total initial
+download sizes. No Vite large-chunk warning remains.
+
+Problem:
+The production bundle is approximately 808 KB before gzip and Vite reports a
+large-chunk warning. ESLint reports 48 warnings, mainly explicit any types plus a
+React hook cleanup warning. Broad use of any weakens the value of TypeScript at
+API boundaries.
+
+Affected files:
+- SonaFlyUI/sonaflyui.client/src/App.tsx
+- SonaFlyUI/sonaflyui.client/src/api/client.ts
+- SonaFlyUI/sonaflyui.client/src/components/PlayerContext.tsx
+- Multiple page components
+
+Suggested fix:
+1. Lazy-load route components with React.lazy/Suspense and configure sensible
+   vendor chunks where measurement shows a benefit.
+2. Define shared API DTOs and remove explicit any from page/query code.
+3. Resolve the PlayerContext effect-cleanup warning by capturing the relevant ref
+   value inside the effect where appropriate.
+4. Consider making warnings fail CI after the existing set is cleaned up.
+
+Acceptance criteria:
+- npm run lint has no warnings.
+- Initial route JavaScript is materially smaller and routes still navigate cleanly.
+- npm test, npm run typecheck, and npm run build pass.
+
+
+P3 - Make build and test validation reproducible
+------------------------------------------------
+
+STATUS: PARTIAL. global.json, CI server/web/container/compose/Windows-MAUI jobs and
+accurate tests/README.md now exist. This review found .NET 10.0.401 installed and
+ran all 99 server tests successfully. CI's EF command passes SkipSpaBuild to the
+application instead of MSBuild; fix N10. N11 records remaining integration coverage.
+
+Problem:
+The projects target .NET 10, but there is no pinned SDK configuration. On the
+review machine only .NET SDK 9.0.318 was discoverable, so server tests could not
+run. tests/README.md also claims browser validation using a temporary database and
+silent WAV fixtures, but no browser/e2e test files are present.
+
+Affected files:
+- Add global.json
+- Add/update CI workflow files
+- tests/README.md
+- tests/SonaFlyUI.Server.Tests/*
+- Web test configuration
+
+Suggested fix:
+1. Add global.json pinning the supported .NET 10 SDK with an intentional roll-
+   forward policy.
+2. Add CI jobs for the server test project, web tests, typecheck, lint, production
+   build, and optionally the MAUI target(s) supported by the runner.
+3. Either add the documented browser tests (Playwright is suitable) or correct
+   the README so it describes the existing Vitest unit tests accurately.
+4. Test a built Docker image and its health check in CI.
+
+Acceptance criteria:
+- A clean documented environment can run all validation commands.
+- CI fails on test, type, lint, server build, or container health regressions.
+- Test documentation matches files and behavior in the repository.
+
+
+Current validation baseline (2026-09-14)
+----------------------------------------
+
+- npm test: 22 tests passed (9 node API tests and 13 Vitest tests).
+- npm run typecheck: passed.
+- npm run lint: passed with --max-warnings 0, no warnings or errors.
+- npm run build: passed, split routes/vendors; largest chunk 350.51 kB.
+  Two non-failing SignalR PURE-annotation notices remain.
+- Server tests: 99 passed, 0 failed/skipped, using .NET SDK 10.0.401 at
+  C:/Program Files/dotnet/dotnet.exe. The default shell PATH still lacks dotnet.
+- NuGet restore emitted two NU1903 high-severity advisories; see N08.
+- A read-only Node reproduction confirmed concurrent restoreSession calls make
+  two HTTP refresh requests, and a simulated 503 is swallowed as null (N03).
+- Docker, Caddy, device playback and live browser/TLS checks were not run.
+
+Recommended validation commands:
+
+  dotnet test tests/SonaFlyUI.Server.Tests/SonaFlyUI.Server.Tests.csproj -p:SkipSpaBuild=true
+
+From SonaFlyUI/sonaflyui.client:
+
+  npm ci
+  npm test
+  npm run typecheck
+  npm run lint
+  npm run build
+
+Also build and start the Docker image, verify /api/health, exercise a range-based
+audio request, and test a SignalR auditorium reconnect through the TLS proxy.
+
+
+NEW AND REMAINING ACTIONABLE WORK
+================================
+
+N01 - P1 - Enforce playlist/mixed-tape ownership and content visibility
+STATUS: RESOLVED. CollectionCaller carries the caller's identity and admin flag into
+every playlist/mixed-tape service method. Reads are owner/public/system/admin and writes
+owner/admin only, both as database predicates, so public never implies writable; a
+collection the caller cannot see reports 404 rather than 403. Item projections and counts
+are filtered by the caller's restrictions, and AddTrack validates the track against them.
+CollectionAccessTests covers two users across every read/write/item/reorder route on real
+SQLite and asserts the database is unchanged after each refusal.
+Files: Api/Controllers/PlaylistsController.cs, MixedTapesController.cs and
+Infrastructure/Services/PlaylistService.cs, MixedTapeService.cs under the server.
+GetById and write methods pass only object IDs to services, with no current user
+or ownership check. Any authenticated user knowing another object's ID can read
+private collections or modify/delete them. Public playlist IDs are discoverable
+through GetAll, so another user's public playlist can be modified immediately.
+Their item projections also expose restricted tracks and AddTrack does not apply
+the caller's restrictions.
+Fix: Pass caller identity into service methods; enforce owner/admin write policy
+and owner/public/system read policy in database predicates. Public read must not
+imply public write. Filter returned items/counts by user restrictions and validate
+track access before adding. Specify admin exceptions explicitly.
+Acceptance: Two-user tests exercise every read/write/item/reorder route, public
+read-only access, private ID access, and newly restricted existing items. Unauthorized
+operations return 403/404 and never change the database.
+
+N02 - P1 - Make refresh consumption and session revocation atomic
+STATUS: RESOLVED. Refresh holds an immediate (write-lock-taking) transaction from
+before the token is read until the successor commits, and claims the token with a
+conditional ExecuteUpdate on RevokedUtc == null, so a caller that updates no rows gets no
+descendant. The account is re-read inside the lock rather than through the token's
+navigation property, so the successor and access token carry the current stamp and status.
+Logout takes the same lock, so a rotation in flight has already inserted its child by the
+time the family sweep runs. UpdateSecurityStampAsync's result is checked and a failure
+throws instead of reporting success. RefreshRotationConcurrencyTests races independent
+connections against a file-backed database; the tests were confirmed to fail against the
+previous unguarded implementation.
+Files: AuthController.Refresh/Logout, UserSecurityService, RefreshToken and EF mapping.
+Refresh reads IsRevoked before its save without a transaction/concurrency token.
+Two requests can both consume the same token and mint descendants. Worse, logout
+or password reset can revoke a family/user after Refresh reads it but before it
+inserts a new unrevoked descendant. The comment saying family revocation protects
+in-flight rotations is not true for descendants inserted after ExecuteUpdate.
+Fix: Atomically claim a still-active token and insert its successor, coordinated
+with durable family/user revocation state. Use transactional compare-and-set or
+an equivalent database-enforced design; do not rely only on a process-local lock.
+Recheck the current account stamp/status within this protocol. Check the result of
+UpdateSecurityStampAsync instead of silently assuming it succeeded.
+Acceptance: Barrier-controlled tests using independent contexts/connections cover
+two refreshes, refresh versus logout, password reset, disable and role change.
+No successor issued from a revoked session can refresh successfully afterward.
+
+N03 - P1 - Coordinate browser restoration/rotation and preserve transient errors
+STATUS: RESOLVED. One rotation at a time, per session and across tabs: callers join
+an in-flight rotation instead of starting another, and a Web Lock serialises tabs where it
+is available, with the local queue as the fallback. Login and logout queue behind any
+outstanding rotation. restoreSession returns null only for 400/401/403 and propagates
+everything else, so an outage or 429 reaches the retry UI instead of the login page.
+client.test.mjs exercises the real restoration logic (StrictMode double mount, the lock,
+logout during a rotation, transient failures); AuthContext.test.tsx covers the retry path.
+Files: web src/api/client.ts (restoreSession), auth/AuthContext.tsx, src/main.tsx.
+restoreSession bypasses pendingRefresh; StrictMode runs the mount effect twice in
+development and two tabs also share the same rotating cookie. Both can send the
+same token, triggering the new replay-family revocation. An epoch check cannot
+prevent a Set-Cookie response from modifying the browser's cookie. restoreSession
+also catches all failures as null, turning a network/503/429 outage into a login
+redirect instead of the advertised retryable session error. Existing AuthContext
+tests mock restoreSession and therefore miss this path.
+Fix: Share one restoration/refresh operation per session and coordinate across
+tabs (or design server rotation to safely accommodate legitimate concurrent use).
+Serialize logout/login with outstanding cookie mutations. Return null only for
+definitively absent/invalid sessions; propagate transient failures to retry UI.
+Acceptance: StrictMode mount, two tabs, logout during delayed refresh, login replacing
+an old session, and network/503/429 tests using the real client restoration logic.
+Normal reloads must not revoke a healthy session; stale responses must not restore it.
+
+N04 - P1 - Protect the last-admin invariant across concurrent requests
+STATUS: RESOLVED. Disable, Delete and role changes run inside
+SerializedWrites.BeginExclusiveAsync, which takes SQLite's write lock before the guard
+query, and the user is loaded inside that scope. Only a success status commits. A caller
+that loses the lock beyond its timeout gets 409 rather than 500.
+UserAdministrationConcurrencyTests races independent connections on a file-backed database
+across disable/disable, demote/demote and delete/demote; the tests were confirmed to fail
+against the previous implementation.
+File: server Api/Controllers/UsersController.cs.
+IsLastEnabledAdminAsync runs before Update's transaction; Disable/Delete have no
+transaction around the check and mutation. Two admins can concurrently disable
+each other, or concurrent demotions can each observe two enabled admins and both
+succeed. Self-disable protection does not prevent this.
+Fix: Put the count check and mutation in one serialized database operation covering
+all disable/delete/demotion paths. Use a locking/isolation strategy appropriate for
+SQLite and handle retry/conflict results. Preserve role allowlisting and rollback.
+Acceptance: Independent-context tests synchronize competing operations before the
+guard; at least one enabled admin remains and one operation is refused cleanly.
+
+N05 - P2 - Complete the mobile password-change contract
+STATUS: RESOLVED. Mobile UserInfo carries MustChangePassword and ServerConfig
+records it, so both login and a cold start route such accounts to the password change
+rather than into the shell. ChangePasswordAsync deserialises the replacement pair and
+stores it against the server captured before the request, only while that is still the
+same session; a switch or sign-out mid-request returns ChangedButSignedOut instead of
+writing one server's credentials over another's. MobileClientTests covers changing then
+browsing without signing in again, a restart, the changed-server case and sign-out during
+the change.
+Files: SonaFly/Services/SonaFlyApiClient.cs (ChangePasswordAsync), Models/ApiModels.cs,
+ViewModels/LoginViewModel.cs and SettingsViewModel.cs.
+The server now revokes every old token and returns replacement credentials from
+change-password. Mobile only returns IsSuccessStatusCode and discards the body,
+so a successful password change immediately leaves mobile with revoked tokens.
+Mobile UserInfo also lacks MustChangePassword and login always enters the shell,
+so newly created/reset/bootstrap users encounter 403s without the required flow.
+Fix: Deserialize/persist the replacement pair against the captured server/session;
+add MustChangePassword to the model and route those users to password change before
+browsing. Guard against a server/session switch while the request is pending.
+Acceptance: Login with temporary password, change it, then browse and stream without
+signing in again. Test changed-server and logout-during-change responses as well.
+
+N06 - P2 - Finish mobile logout and serialize keychain persistence
+STATUS: RESOLVED. Logout stops playback, leaves the hub, calls the server's
+auth/logout with the captured refresh token, and then clears local state; failure to reach
+the server or to erase the keychain entry is reported rather than swallowed. Keychain
+writes and removals are serialised per server behind a semaphore and carry a session
+generation, so a write still queued when the user signs out is discarded instead of
+restoring the credential on disk. Tests hold a write open across a sign-out and reload a
+fresh storage service to prove nothing comes back.
+Files: SonaFly/ViewModels/SettingsViewModel.cs, Services/ServerStorageService.cs,
+Services/SonaFlyApiClient.cs, Services/AuditoriumService.cs.
+Logout clears local tokens but never calls server auth/logout; the refresh family
+remains usable. UpdateTokensAsync mutates memory then awaits SecureStorage.SetAsync;
+ClearTokensAsync can remove the key while that write is pending, after which the
+old write can restore it on disk. Startup would reload the logged-out credential.
+Fix: Revoke the captured refresh family on logout, clear local state immediately,
+stop playback/leave hubs, and serialize secure-store writes/removal per server with
+a session generation check. Surface or handle removal failures deliberately.
+Acceptance: Delay the secure-store write, log out, then release it and reload a new
+storage service: no credentials return. Verify logout invokes the original server
+and its old refresh token is rejected; local logout still works when offline.
+
+N07 - P2 - Discard stale auditorium playability results
+STATUS: RESOLVED. CanPlayCurrentTrack now returns the track it examined alongside
+the answer, and the client discards an answer about anything other than the snapshot it is
+applying. A playback generation, bumped by every snapshot and by reconnecting/close/leave,
+invalidates any check still in flight, and the elapsed time from snapshot receipt is added
+to the starting position. AuditoriumContext.test.tsx covers a delayed A after B, after an
+ended event and after a reconnect; those tests were confirmed to fail without the fix.
+File: web src/components/AuditoriumContext.tsx, apply().
+apply awaits CanPlayCurrentTrack but only checks the connection revision afterward.
+The revision does not change between track snapshots or on onreconnecting. A slow
+check for track A can complete after track B or an ended event and start A again;
+it can also restart audio after onreconnecting has stopped it. The server method
+checks the room's current track, not necessarily the snapshot being applied. Time
+spent waiting for this check is not included in the playback-position correction.
+Fix: Add a monotonically increasing snapshot/playback generation invalidated on every
+snapshot and reconnect/close/leave. Bind playability to the snapshot track ID or
+return a versioned result. Correct elapsed time from snapshot receipt before start.
+Acceptance: Delayed A result after B, after ended, and after reconnect cannot start
+stale audio; a delayed valid check starts at the correct shared position.
+
+N08 - P2 - Address NuGet high-severity dependency advisories
+STATUS: RESOLVED. Both advisories came through the owning packages, so those were
+upgraded rather than the transitives pinned: the ASP.NET Core / EF Core references moved
+from 10.0.3 to 10.0.12, which brings Microsoft.OpenApi 2.12 (advisory patched at 2.7.5)
+and SQLitePCLRaw 2.1.12 (advisory range is <= 2.1.11). `dotnet list package --vulnerable
+--include-transitive` now reports none; server tests and the migration check pass. No
+warning was suppressed. Container startup under the new versions is covered by CI, not
+verified locally.
+Files: server/test csproj and resolved dependency graph.
+NU1903 reports Microsoft.OpenApi 2.0.0 and SQLitePCLRaw.lib.e_sqlite3 2.1.11:
+https://github.com/advisories/GHSA-v5pm-xwqc-g5wc
+https://github.com/advisories/GHSA-2m69-gcr7-jv3q
+Fix: Inspect dependency ancestry and advisory applicability, then upgrade the owning
+packages to compatible patched versions. Do not suppress warnings as the fix.
+Acceptance: Transitive vulnerability audit no longer reports these vulnerable
+versions; server tests, migration checks and container startup pass. This review
+did not establish exploitability in SonaFly or choose a patched version.
+
+N09 - P1 - Reject an empty effective forwarded-header trust list
+STATUS: RESOLVED. Blank entries in KnownProxies/KnownNetworks are rejected
+individually, and an allowlist that is configured but produces no usable entry fails
+startup, because UseForwardedHeaders with both lists empty trusts every peer.
+HasTrustedProxy still counts a blank-only list as configured, so validation runs rather
+than being skipped. DeploymentTransportTests covers null/default (forwarding off),
+blank-only, mixed-invalid, and the host-level test asserts an untrusted client cannot
+claim HTTPS.
+File: server Infrastructure/Configuration/DeploymentOptions.cs.
+HasTrustedProxy tests array lengths, while ForwardedHeadersConfiguration.Build
+clears framework defaults and skips blank entries. KnownProxies=[""] (or the
+equivalent networks setting) therefore enables middleware with both lists empty,
+which means trust all, contrary to the documented fail-closed behavior.
+Fix: Reject blank configured entries and reject an empty effective allowlist when
+forwarded headers are enabled. Validate before registering the middleware.
+Acceptance: Null/default config leaves forwarding off; blank-only and mixed-invalid
+arrays fail startup; requests from outside a valid allowlist cannot spoof scheme/IP.
+
+N10 - P2 - Pass the CI EF build property to MSBuild
+STATUS: RESOLVED. The EF step runs `--configuration Release --no-build` against
+the output the Build step produced, and the misleading `-- $DOTNET_SKIP_SPA` application
+argument is gone. SonaFlyDbContextFactory supplies the design-time context, so the check
+needs no JWT secret, deployment configuration or database. Verified locally with the same
+command. The hosted-runner behaviour itself was not exercised here.
+File: .github/workflows/ci.yml, Check for outstanding EF migrations.
+The '-- $DOTNET_SKIP_SPA' suffix passes -p:SkipSpaBuild=true as application arguments,
+not as a build property. The command also uses the default Debug build after CI
+has explicitly built Release. It can rebuild the SPA instead of using tested output.
+Fix: Run EF against the already-built Release server with --no-build and
+--configuration Release; arrange design-time configuration deliberately. Remove
+the misleading application argument. Verify EF tool/runtime versions match.
+Acceptance: This job runs on a clean runner without SPA build prerequisites, passes
+for the current model, and fails when a real unmigrated model change is introduced.
+
+N11 - P2 - Add deployment and authentication integration smoke coverage
+STATUS: PARTIALLY RESOLVED, pending a CI run. HostPipelineTests runs the real
+Program.cs pipeline and covers JWT wiring, unauthenticated refusal, cookie attributes
+(HttpOnly/SameSite/Secure), cookie refresh and its client-header guard, logout, security
+headers, forwarded-header spoofing, blank-allowlist startup failure and the
+password-change gate. A genuine bug surfaced and was fixed: with UseHttps on, the HTTPS
+redirect stood in front of /api/health, so the probe's curl saw a 3xx and reported healthy
+without the database ever being read; health is now exempt from the redirect and a test
+pins it. CI gains a tls-smoke job (compose stack up, health as a database check, HTTP to
+HTTPS, WebSocket negotiate, range requests), Caddyfile validation with the real image, and
+a container-job step that upgrades over a root-owned volume and then repairs it. None of
+the Docker/TLS steps were executed locally — no Docker available in this environment — so
+they are written but unproven; the first CI run is the verification.
+Files: .github/workflows/ci.yml, tests, Docker/compose configuration.
+Current tests predominantly call controllers/helpers directly; Caddy is not started
+in CI. Add host-level tests for JWT/middleware/cookie routing and a TLS compose smoke
+test for health, HTTPS redirects, WebSockets and range requests. Validate the Caddyfile
+with the actual configured image. Ensure health is still a DB check when UseHttps is
+enabled rather than a successful redirect. Test an upgrade with old root-owned data
+volumes: Dockerfile chown does not repair ownership of already-existing mounted data.
+Document a specific ownership migration if needed. Do not mark Docker/device/TLS
+acceptance as executed based only on helper tests or compose config validation.
+
+N12 - P3 - Correct remaining README operational/security claims
+STATUS: RESOLVED. Clone URL is ExythAI. The generated-password lookup now gives a
+command per deployment path, including -f docker-compose.tls.yml. Troubleshooting describes
+the TLS deployment (443/80, no published app port) before the plain-HTTP one. The transport
+section replaces "enough to take over the account" with a table of what each captured
+credential actually grants, with the stream ticket correctly scoped to one track. Data
+Protection isolation is described as separate key rings rather than the fixed application
+name. sonafly_keys is in the volume table, and backup now describes a consistent SQLite
+procedure (stop and copy the WAL set, or an online .backup from a container that has
+sqlite3) plus restoring the key ring with the database. Auditorium says skip and stop are
+shared controls available to the track's starter and to admins. Node minimum is 22.18+.
+A new section documents the volume-ownership migration for upgrades from the root-running
+image. The commands were not executed against a live deployment.
+File: README.md.
+- Clone URL still uses your-username instead of ExythAI.
+- TLS quick start uses a different compose file, but generated-password log lookup
+  omits '-f docker-compose.tls.yml'; provide commands matching the chosen deployment.
+- Troubleshooting still says open 8080 and use HTTP despite recommended Caddy setup.
+- Transport section says a captured track-scoped ticket is enough to take over the
+  account. A ticket grants one track, not API/account access; explain the actual scope.
+- Data Protection's fixed application name does not isolate two SonaFly deployments
+  sharing the same key ring; separate rings provide deployment isolation.
+- Persistent-volume table omits sonafly_keys; include it in backup/recovery guidance.
+- Live SQLite backup copies only the main .db file; provide a consistent SQLite
+  backup/snapshot procedure (or stop the app first), accounting for WAL state.
+- Auditorium says no skip but starter/admin can skip; clarify role-based controls.
+- Node minimum should match tests' native .ts import requirement (22.18+ as previously
+  documented), not unrestricted 22+.
+Acceptance: Follow both deployment paths from a fresh checkout; all commands resolve,
+security claims match code, and restored backups open with consistent data and keys.
+
+
+SERVER REVIEW: NEW ISSUES AND OPTIONAL UPGRADES
+=============================================
+Server paths below are relative to SonaFlyUI/SonaFlyUI.Server/.
+
+N13 - P1 - Do not treat incomplete scans as authoritative deletions
+STATUS: RESOLVED (2026-09-14). FileScanner now walks one directory at a time and records
+unreachable roots and unreadable subtrees in a ScanTraversalReport instead of silently
+yielding nothing. LibraryIndexService only marks a track missing when the report vouches
+for the directory that would hold it; everything else is counted as ScanJob.FilesUnverified.
+An unreachable root now fails the scan; an unreadable subtree gives the new ScanStatus.Partial
+and skips orphan cleanup entirely. CleanupOrphansAsync is keyed on the existence of a track
+row rather than a present one, so a merely-missing track keeps its album/artist identity and
+the playlist membership and ID-based restrictions that hang off it. New migration
+20260915020649_AddScanJobFilesUnverified. Covered by ScanIntegrityTests.
+Files: Infrastructure/Services/FileScanner.cs and LibraryIndexService.cs.
+FileScanner yields no files when Directory.Exists is false and silently skips
+inaccessible directories. LibraryIndexService then marks every unseen track missing,
+declares success and runs CleanupOrphansAsync. An offline NAS or permissions outage
+can therefore hide an entire collection and delete album/artist records. Those
+deletions also null track associations and leave ID-based restrictions referring
+to deleted entities; later reindexing can create new unrestricted entity IDs.
+Fix: Distinguish a verified empty directory from unavailable/incomplete traversal.
+Record traversal failures and do not reconcile absence in unverified subtrees.
+Preserve album/artist identity while missing tracks still reference it; make actual
+garbage collection explicit or apply a retention policy after confirmed deletion.
+Acceptance: Offline root and inaccessible subtree scans fail/report partial results
+without erasing visibility/relationships for unverified files. Disconnect/reconnect
+tests preserve album/artist IDs, playlist membership and content restrictions.
+
+N14 - P2 - Restore missing tracks before the incremental unchanged-file shortcut
+STATUS: RESOLVED (2026-09-14). The unchanged-file shortcut now also requires !IsMissing, so
+a byte-identical file that returns is pushed through the update path, which clears IsMissing
+and re-synchronizes its junctions. Covered by
+ScanIntegrityTests.AnIdenticalFileComingBackBecomesVisibleAgainOnAnIncrementalScan (and a
+companion asserting an unchanged present file is still skipped).
+File: Infrastructure/Services/LibraryIndexService.cs, existing-track branch.
+If a missing file returns with the same size and modification time, the incremental
+scan immediately continues. IsMissing is only cleared in UpdateTrack, so that track
+remains permanently hidden until a full scan or a real file change.
+Fix: Reconcile presence before skipping metadata, or force reindexing for missing
+tracks. Restore any associations deliberately retained/repaired under N13.
+Acceptance: Index a track, mark it missing, restore identical bytes/timestamp, run
+an incremental scan: the original track ID becomes browseable and streamable again.
+
+N15 - P1 - Keep metadata junctions and restrictions consistent on rescan
+STATUS: RESOLVED (2026-09-14). UpdateTrack is now async and updates TrackGenres and
+TrackArtists alongside the scalars, removing obsolete links and adding new ones, so a track
+retagged into a blocked genre is actually blocked. AudioMetadata gained a ReadFailed flag that
+MetadataReader sets when TagLib throws; the scan then updates only file-level facts and keeps
+last-known-good tags and junctions rather than overwriting them with a filename placeholder.
+Artwork is refreshed on the changed-file path under an explicit policy (embedded art wins on
+refresh, otherwise only a gap is filled). Covered by ScanIntegrityTests.
+Files: Infrastructure/Services/LibraryIndexService.cs (UpdateTrack/CreateTrackAsync),
+MetadataReader.cs, RestrictionQueryExtensions.cs.
+UpdateTrack changes Genre and PrimaryArtistId but never updates TrackGenres or
+TrackArtists. Restrictions use TrackGenres, so changing a track to a blocked genre
+leaves it streamable under its old genre relationship. Old genres can remain denied
+after their removal. Changed embedded artwork is also never refreshed on this path.
+MetadataReader catches parse errors and returns empty fallback metadata; rescanning
+an existing file can then replace good associations with null values.
+Fix: Update scalar metadata and junctions together, removing obsolete links and
+adding the new ones. Distinguish parse failure from genuinely absent tags and retain
+last-known-good metadata on failure. Refresh artwork according to an explicit policy.
+Acceptance: Retag A-to-B artist/genre, remove tags, change artwork and simulate a
+parse failure. Browse data, junctions and stream restrictions remain consistent.
+
+N16 - P1 - Make library purge coordinated, atomic and filesystem-safe
+STATUS: RESOLVED (2026-09-14). New LibraryMaintenanceGate (singleton) gives scans and
+destructive maintenance one exclusive slot; the purge cancels any running scan and waits for
+it to drain, and a scan that reaches the front of the queue during maintenance abandons its
+turn instead of repopulating. All record deletion is now inside one transaction, and it
+includes the MixedTape/MixedTapeItem and UserRestriction rows that used to survive their
+targets. In-memory auditorium rooms are stopped, emptied and broadcast before deletion.
+Artwork cache cleanup refuses to run when the configured cache overlaps any library root, the
+database file/directory or the Data Protection key ring, removes only the entries inside the
+cache, leaves the mount directory itself in place, and reports incomplete cleanup in the
+response so it can be retried. Covered by LibraryAdministrationTests (overlap refusal is
+asserted against a temporary fixture, verifying the decoy music file is untouched).
+File: Api/Controllers/SystemController.cs, PurgeLibraryData.
+Multiple ExecuteDelete/Update calls commit independently and purge does not stop
+the scan worker or auditorium timers. Cancellation/failure midway leaves partial
+deletion; a concurrent scan can write data back. MixedTape rows and UserRestriction
+rows remain despite deleted target data, and in-memory auditorium queues/current
+tracks still reference deleted tracks. Directory.Delete recursively deletes the
+configured ArtworkRoot without checking overlap with music, database or key storage.
+A mistaken ArtworkRoot can therefore delete unrelated persistent files. Deleting
+the mounted root directory itself may also fail and only log a warning.
+Fix: Introduce a maintenance gate shared with scans/library mutations; cancel/drain
+work and reset/broadcast auditorium state. Delete all intended library records in
+one transaction with a documented restriction/tape policy. Validate cache-path
+isolation and remove only owned cache files within it, leaving the mount root in
+place. Report incomplete filesystem cleanup explicitly and support retry.
+Acceptance: Inject failure/cancellation at each phase; verify rollback or recoverable
+state, no scan repopulation and no stale playback. Test overlapping paths exclusively
+with temporary fixtures and assert original music/DB/key files are never removed.
+
+N17 - P2 - Persist scan requests and recover root status after restart
+STATUS: RESOLVED (2026-09-14). TriggerScan rejects disabled roots, deduplicates against any
+Queued/Running ScanJob for the root, persists the job before returning 202 and returns its ID.
+The channel is bounded; a saturated queue fails the persisted job and returns 503 rather than
+leaving an unreachable Queued row. ScanRequest now carries the ScanJobId and the index service
+adopts that row. Startup recovery fails stale jobs AND resets LibraryRoot.LastScanStatus, which
+is what left the web Scan button permanently disabled. Cache initialization moved inside the
+scan try/catch, and final state persistence uses CancellationToken.None so a cancelled scan
+still records its own outcome.
+Files: Api/Controllers/LibraryRootsController.cs, Infrastructure/BackgroundServices/
+ScanQueue.cs and LibraryScanBackgroundService.cs, Services/LibraryIndexService.cs.
+TriggerScan accepts an unbounded in-memory request without a persisted queued job,
+deduplication or an enabled-root check. Queued requests vanish on restart. Startup
+marks stale ScanJobs failed but never updates LibraryRoot.LastScanStatus; the web
+Scan button remains disabled if that field still says Running. Cache initialization
+is outside the scan try/catch, and final state persistence uses the canceled worker
+token, creating additional paths that leave a root stuck Running.
+Fix: Persist the job before returning 202, return its ID, cap/deduplicate pending
+requests per root and reject disabled roots. Reconcile both job/root state on all
+failure/shutdown/startup paths using a bounded cleanup token. Resume or explicitly
+fail queued jobs according to documented semantics.
+Acceptance: Rapid duplicate submissions produce one pending job; restart during
+queueing/running leaves truthful recoverable statuses and the UI can start a new
+scan. Initialization failures and cancellation do not strand a Running root.
+
+N18 - P2 - Normalize root paths without destroying filesystem-root semantics
+STATUS: RESOLVED (2026-09-14). New Application/Common/FileSystemPaths canonicalizes via
+Path.GetFullPath, trims a trailing separator only when the path is not itself the filesystem
+root, rejects non-absolute paths, and exposes platform-appropriate case semantics
+(OrdinalIgnoreCase on Windows, Ordinal elsewhere) used by both the scan path sets and root
+validation. Create and Update share one ValidateAndNormalizePathAsync, so duplicate detection
+compares the value that will be stored and Update now applies the same accessibility check as
+Create. Covered by LibraryAdministrationTests.
+Files: Infrastructure/Services/LibraryRootService.cs, LibraryIndexService.cs.
+Create/Update trim all trailing separators: '/' becomes empty and 'C:\\' becomes
+'C:', a drive-relative path. Duplicate checks compare the raw input before storing
+the trimmed version. Update also accepts inaccessible paths without the create
+validation. Scan path sets use inconsistent case rules (existing dictionary uses
+default comparison; scannedPaths is always OrdinalIgnoreCase, including Linux).
+Fix: Canonicalize absolute paths once using root-aware APIs; apply identical
+normalization to validation, duplicate detection and persistence. Use appropriate
+filesystem case semantics and decide how overlapping roots/symlinks are handled.
+Acceptance: Filesystem roots, trailing separators, relative paths, case-distinct
+Linux files, Windows casing and inaccessible updates all behave deterministically.
+
+N19 - P2 - Give auditorium tracks without valid duration a completion path
+STATUS: RESOLVED (2026-09-14). ScheduleTrackEnd no longer returns without scheduling: a null,
+negative or non-finite duration falls back to a bounded 30-minute ceiling, so a room cannot be
+parked indefinitely. A shared TrackEndSchedulerService.IsPlayable check (indexed, not missing,
+file present on disk) gates both PlayTrack and queue advancement, and an unplayable queued item
+is skipped with an OnQueueItemSkipped message naming the reason instead of vanishing silently.
+AuditoriumRestrictionTests now uses a real temp file, since DB flags alone no longer suffice.
+Files: Infrastructure/Services/TrackEndSchedulerService.cs and MetadataReader.cs.
+DurationSeconds is nullable; ScheduleTrackEnd simply returns for null/non-finite
+duration. Web shared playback waits for server advancement on media end, so such
+a track leaves the room stuck until its starter/admin skips it. Missing/corrupt
+files can be admitted using DB flags even though they cannot actually stream.
+Fix: Validate playability/duration before accepting or starting a shared track,
+or implement a bounded recovery/completion protocol that cannot be abused by one
+listener. Skip unavailable queued files with a user-visible reason and continue.
+Acceptance: Null/zero/invalid durations, removed files and unreadable media cannot
+stall the room indefinitely. Normal tracks still advance once and only once.
+
+N20 - P2 - Bound pagination inputs and make page ordering deterministic
+STATUS: RESOLVED (2026-09-14). New Application/Common/Pagination centralizes the limits
+(pageSize 1-200, page 1-100000, search limit 1-50, query/filter text 200 chars) and offsets go
+through a checked helper. Tracks, Albums, Artists and Search return a consistent 400 for
+out-of-range input, and every ORDER BY now ends with the entity ID so equal sort keys cannot
+repeat or disappear across page boundaries. Covered by LibraryAdministrationTests.
+Files: Api/Controllers/TracksController.cs, AlbumsController.cs, ArtistsController.cs,
+SearchController.cs and Application/DTOs/LibraryDtos.cs.
+page/pageSize/limit are accepted without useful bounds. Large sizes can return an
+entire library; invalid values can cause bad offsets or invalid TotalPages math.
+Queries sort by nonunique title/artist/year/etc. without a stable ID tiebreaker,
+so equal sort keys have no guaranteed ordering across pages.
+Fix: Validate positive page/size and a documented maximum, bound query lengths and
+search limits, use checked offset arithmetic, and append a unique tiebreaker to
+each order. Return a consistent 400 validation response for invalid requests.
+Acceptance: Zero/negative/overflow/huge inputs are bounded or rejected. Duplicate
+titles across page boundaries do not repeat/disappear in a fixed dataset.
+
+N21 - P2 - Keep diagnostic data admin-only and genre counts user-filtered
+STATUS: RESOLVED (2026-09-14). ScansController redacts ErrorSummary for non-admins to a bare
+count, keeping filesystem paths and parser messages admin-only. GenresController filters out
+restricted genres and counts only tracks the caller can actually play (indexed, present,
+unrestricted), dropping genres that are entirely restricted. /api/system/status separates
+administrative server totals from user-visible library totals: non-admins get restriction-aware
+counts and no deployment/scan fields, and the web System page hides those rows accordingly.
+Covered by LibraryAdministrationTests.
+Files: Api/Controllers/ScansController.cs, GenresController.cs, SystemController.cs.
+Any authenticated listener can fetch scan ErrorSummary, which contains filesystem
+names, parser messages and potentially absolute paths. Genres returns every genre
+and its unfiltered count, including restricted/missing tracks; system status also
+publishes global totals even when the caller's collection is restricted.
+Fix: Restrict detailed scan diagnostics to admins or return a redacted listener DTO.
+Use the same playable-track restriction predicate for listener genre/count data.
+Explicitly separate administrative server totals from user-visible library totals.
+Acceptance: A restricted non-admin cannot retrieve raw scan errors or blocked genre
+metadata/counts; admin diagnostics remain usable. Verify all three endpoint families.
+
+N22 - P2 - Avoid repeated and unbounded artwork downloads during scanning
+STATUS: RESOLVED (2026-09-14). Album artwork is resolved at most once per album per scan, and
+an album that already has artwork is skipped entirely unless a changed file brings new embedded
+art. OnlineArtworkService streams responses with an explicit 8 MB ceiling (rejecting an
+oversized Content-Length before reading), applies a 30 s per-request timeout, disposes every
+HttpResponseMessage, and preserves cancellation. Transient failures (5xx, 408, 429, network
+errors, timeouts) are no longer written into the not-found cache, which is itself bounded at
+10k entries and expires correctly.
+Files: Infrastructure/Services/LibraryIndexService.cs (CreateTrackAsync),
+OnlineArtworkService.cs and ArtworkService.cs.
+Each new track calls ExtractAndStoreAsync even if its album already has artwork.
+Online lookups cache failures but not successes; an album without embedded/local
+art can repeat the same remote search/download per track. Downloads buffer the
+whole response with no explicit byte limit, and HttpResponseMessage instances
+are not disposed. Network/parser failures are broadly swallowed as absent artwork.
+Fix: Resolve album artwork once per scan or reuse existing album artwork, bound
+image size/time, stream with explicit limits, dispose responses, and preserve
+cancellation. Bound/expire the negative cache and distinguish transient errors
+from confirmed not-found results. Deduplicate concurrent lookups if added later.
+Acceptance: Many tracks in one album require at most one successful remote lookup;
+oversized/slow images are rejected without blocking the scan indefinitely; canceled
+scans stop promptly and retryable network failures are not cached as absent for a day.
+
+N23 - P3 - Optional upgrade: scalable search and scan progress
+STATUS: PROPOSED, not a correctness blocker.
+Current search lowercases columns and performs substring matching; scans load all
+artists/albums/genres plus root tracks into memory and retain tracked entities.
+Benchmark a realistically large synthetic library before changing the design.
+Consider SQLite FTS for search, paged/normalized metadata caches, bounded EF tracking,
+and persisted scan progress exposed through polling or SignalR. Define search
+semantics and retain restriction filtering in every result path.
+Acceptance: Publish baseline/after measurements for latency, peak memory, scan time
+and restriction correctness. Add only changes with measured value.
+
+N24 - P3 - Optional upgrade: token/job retention and maintenance observability
+STATUS: PROPOSED, not a correctness blocker.
+Refresh rotation creates a new database row each time; historical tokens and scan
+jobs have no visible retention worker. Add configurable retention and indexed cleanup
+in bounded batches, preserving enough revoked-family history for replay detection.
+Expose queue length, last successful scan, failed-job counts and storage usage to
+admins. Document backup/restore and retention interaction rather than silently
+deleting operational history.
+Acceptance: A long-running synthetic workload has bounded historical storage;
+cleanup preserves live sessions/replay protections and does not monopolize SQLite.
+
+N25 - P3 - Optional upgrade: document/enforce single-instance room ownership
+STATUS: PROPOSED architecture clarification.
+Persistent Data Protection keys support shared ticket validation, but auditorium
+rooms, connection membership, timers and the scan queue remain process-local.
+Sharing keys alone does not make several server replicas safe: clients can observe
+different playback state and workers can independently scan the same library.
+Fix: Clearly document a single-instance deployment constraint now. If scaling is
+needed, design shared room ownership/state, a SignalR backplane and distributed
+job coordination before advertising replica support; assess SQLite storage limits.
+Acceptance: Documentation distinguishes ticket compatibility from full replica
+support. A future multi-instance implementation passes cross-instance join/skip/
+reconnect/scan tests with one authoritative playback and job owner.

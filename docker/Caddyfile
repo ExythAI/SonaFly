@@ -1,0 +1,59 @@
+# TLS termination for SonaFly.
+#
+# Caddy obtains and renews a certificate automatically. Replace the site address with
+# your own domain (a public DNS name that resolves to this host is required for the
+# automatic certificate; see below for the local-only alternative).
+#
+# Port 80 must also be reachable for the ACME HTTP challenge, and Caddy redirects
+# HTTP to HTTPS on it for you.
+
+{$SONAFLY_DOMAIN} {
+	# Everything, including the SignalR WebSocket at /hubs/auditorium and range
+	# requests for audio, is proxied as-is. No special casing is needed: Caddy
+	# forwards Upgrade and Range headers and streams responses without buffering.
+	reverse_proxy sonafly:8080 {
+		# The application only trusts these when the sender is a configured known
+		# proxy — see SonaFly__Deployment__KnownNetworks in docker-compose.tls.yml.
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	# Audio streaming can be long-running; do not cut a track off mid-playback.
+	request_body {
+		max_size 10MB
+	}
+
+	encode zstd gzip
+
+	log {
+		output stdout
+		format console
+		# Stream and artwork URLs carry a short-lived ticket in the query string.
+		# Do not write them to the access log.
+		format filter {
+			wrap console
+			fields {
+				request>uri query {
+					delete ticket
+					delete access_token
+				}
+			}
+		}
+	}
+}
+
+# ── Local-only alternative ──
+#
+# Without a public domain, replace the block above with the following to have Caddy
+# issue its own internal CA certificate. You must then install Caddy's root certificate
+# on each client device, or browsers will refuse the connection.
+#
+#	https://sonafly.local {
+#		tls internal
+#		reverse_proxy sonafly:8080 {
+#			header_up X-Forwarded-Proto {scheme}
+#			header_up X-Forwarded-Host {host}
+#			header_up X-Forwarded-For {remote_host}
+#		}
+#	}

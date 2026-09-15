@@ -1,15 +1,16 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Box, Typography, Card, CardContent, IconButton, CircularProgress, Chip } from '@mui/material';
+import { Box, Typography, Card, IconButton, CircularProgress, Chip } from '@mui/material';
 import { ArrowBack, PlayArrow, Pause } from '@mui/icons-material';
 import { browseApi, artworkUrl } from '../api/client';
+import type { TrackListItemDto } from '../api/types.ts';
 import { usePlayer } from '../components/PlayerContext';
 
 const AlbumDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { play, pause, currentTrack, isPlaying } = usePlayer();
+    const { play, pause, resume, currentTrack, isPlaying, sharedRoom } = usePlayer();
     const { data: album, isLoading } = useQuery({
         queryKey: ['album', id],
         queryFn: () => browseApi.albumById(id!).then(r => r.data),
@@ -19,15 +20,15 @@ const AlbumDetailPage: React.FC = () => {
     if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
     if (!album) return <Typography>Album not found</Typography>;
 
-    const fmt = (s?: number) => {
+    const fmt = (s?: number | null) => {
         if (!s) return '--';
         const m = Math.floor(s / 60);
         return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
     };
 
-    const totalDuration = album.tracks?.reduce((sum: number, t: any) => sum + (t.durationSeconds || 0), 0) || 0;
+    const totalDuration = album.tracks?.reduce((sum, t) => sum + (t.durationSeconds || 0), 0) || 0;
 
-    const trackQueue = album.tracks?.map((t: any) => ({
+    const trackQueue = album.tracks?.map(t => ({
         id: t.id,
         title: t.title,
         artistName: t.artistName,
@@ -36,7 +37,7 @@ const AlbumDetailPage: React.FC = () => {
         durationSeconds: t.durationSeconds,
     })) ?? [];
 
-    const handlePlay = (t: any) => {
+    const handlePlay = (t: TrackListItemDto) => {
         const track = {
             id: t.id,
             title: t.title,
@@ -73,14 +74,14 @@ const AlbumDetailPage: React.FC = () => {
                     <Typography variant="caption" color="text.secondary" textTransform="uppercase" letterSpacing={1}>Album</Typography>
                     <Typography variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>{album.title}</Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                        {album.artistName && album.albumArtistId && (
+                        {album.artistName && album.artistId && (
                             <Typography variant="body1" fontWeight={500}
                                 sx={{ color: 'primary.light', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
-                                onClick={() => navigate(`/artists/${album.albumArtistId}`)}>
+                                onClick={() => navigate(`/artists/${album.artistId}`)}>
                                 {album.artistName}
                             </Typography>
                         )}
-                        {album.artistName && !album.albumArtistId && (
+                        {album.artistName && !album.artistId && (
                             <Typography variant="body1" fontWeight={500}>{album.artistName}</Typography>
                         )}
                         {album.year && <Chip label={album.year} size="small" sx={{ height: 22 }} />}
@@ -106,8 +107,8 @@ const AlbumDetailPage: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {album.tracks?.map((t: any) => {
-                                const isCurrent = currentTrack?.id === t.id;
+                            {album.tracks?.map((t) => {
+                                const isCurrent = !sharedRoom && currentTrack?.id === t.id;
                                 return (
                                     <tr key={t.id} style={{
                                         borderBottom: '1px solid rgba(255,255,255,0.04)',
@@ -121,11 +122,11 @@ const AlbumDetailPage: React.FC = () => {
                                         <td style={{ padding: '10px 16px', fontSize: 13, color: '#9AA0A6', textAlign: 'right' }}>{fmt(t.durationSeconds)}</td>
                                         <td style={{ padding: '10px 16px' }}>
                                             {isCurrent && isPlaying ? (
-                                                <IconButton size="small" onClick={pause}>
+                                                <IconButton size="small" aria-label={`Pause ${t.title}`} onClick={pause}>
                                                     <Pause fontSize="small" sx={{ color: '#B388FF' }} />
                                                 </IconButton>
                                             ) : (
-                                                <IconButton size="small" onClick={() => handlePlay(t)}>
+                                                <IconButton size="small" aria-label={`Play ${t.title}`} onClick={() => isCurrent ? resume() : handlePlay(t)}>
                                                     <PlayArrow fontSize="small" />
                                                 </IconButton>
                                             )}

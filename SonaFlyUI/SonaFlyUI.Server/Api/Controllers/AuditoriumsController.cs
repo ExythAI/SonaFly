@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.SignalR;
+using SonaFlyUI.Server.Api.Hubs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,11 +17,15 @@ public class AuditoriumsController : ControllerBase
 {
     private readonly SonaFlyDbContext _db;
     private readonly AuditoriumStateService _state;
+    private readonly TrackEndSchedulerService _scheduler;
+    private readonly IHubContext<AuditoriumHub> _hub;
 
-    public AuditoriumsController(SonaFlyDbContext db, AuditoriumStateService state)
+    public AuditoriumsController(SonaFlyDbContext db, AuditoriumStateService state, TrackEndSchedulerService scheduler, IHubContext<AuditoriumHub> hub)
     {
         _db = db;
         _state = state;
+        _scheduler = scheduler;
+        _hub = hub;
     }
 
     private Guid CurrentUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -40,6 +46,7 @@ public class AuditoriumsController : ControllerBase
             var room = _state.GetRoom(auditoriums[i].Id);
             if (room != null)
             {
+                using var lease = await room.EnterAsync(ct);
                 auditoriums[i] = auditoriums[i] with
                 {
                     ActiveUserCount = room.ActiveUsers.Count,
@@ -58,8 +65,11 @@ public class AuditoriumsController : ControllerBase
         var exists = await _db.Auditoriums.AnyAsync(a => a.Id == id && a.IsActive, ct);
         if (!exists) return NotFound();
 
-        var room = _state.GetRoom(id);
-        return room == null ? Ok(new AuditoriumStateSnapshot(id, null, null, null, null, null, 0, false, null, null, [], [], DateTime.UtcNow)) : Ok(room.ToSnapshot());
+        var room = _state.GetOrCreateRoom(id);
+        using var lease = await room.EnterAsync(ct);
+        if (room.IsDeleted) return NotFound();
+        await _scheduler.LoadQueueAsync(room, _db);
+        return Ok(room.ToSnapshot());
     }
 
     /// <summary>Create a new auditorium. Admin only.</summary>
@@ -85,9 +95,14 @@ public class AuditoriumsController : ControllerBase
     {
         var auditorium = await _db.Auditoriums.FindAsync([id], ct);
         if (auditorium == null) return NotFound();
+        var room = _state.GetOrCreateRoom(id);
+        using var lease = await room.EnterAsync(ct);
         auditorium.IsActive = false;
         await _db.SaveChangesAsync(ct);
-        _state.RemoveRoom(id);
+        room.IsDeleted = true;
+        room.StopPlayback();
+        await _hub.Clients.Group($"aud-{id}").SendAsync("OnRoomClosed", cancellationToken: ct);
+        // Retain the tombstone so a join already in progress cannot recreate this room.
         return NoContent();
     }
 }

@@ -59,6 +59,10 @@ public class ArtworkService : IArtworkService
 
             return await StoreArtworkBytesAsync(online.Value.Data, online.Value.MimeType, ArtworkSourceType.Manual, ct);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // A cancelled scan must stop, not be absorbed as "no artwork" (backlog N22).
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Online artwork fetch failed for '{Artist} - {Album}'", artistName, albumTitle);
@@ -117,6 +121,10 @@ public class ArtworkService : IArtworkService
                 }
             }
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error scanning folder artwork near {FilePath}", audioFilePath);
@@ -168,6 +176,10 @@ public class ArtworkService : IArtworkService
             await _db.SaveChangesAsync(ct);
 
             return new ArtworkResult(asset.Id, storagePath);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

@@ -28,6 +28,12 @@ namespace SonaFly
             {
                 startPage = _services.GetRequiredService<LoginPage>();
             }
+            else if (active.MustChangePassword)
+            {
+                // The server refuses everything but the change itself, so opening the shell
+                // would show a library of 403s.
+                startPage = _services.GetRequiredService<SettingsPage>();
+            }
             else
             {
                 startPage = new AppShell();
@@ -48,6 +54,22 @@ namespace SonaFly
             if (Windows.Count > 0)
             {
                 Windows[0].Page = new AppShell();
+            }
+        }
+
+        /// <summary>
+        /// Sends the user to change a password the server will not let them keep. Nothing
+        /// else works until they do, so this replaces the page rather than pushing onto it.
+        /// </summary>
+        public void NavigateToPasswordChange()
+        {
+            if (Windows.Count > 0)
+            {
+                Windows[0].Page = new NavigationPage(_services.GetRequiredService<SettingsPage>())
+                {
+                    BarBackgroundColor = Color.FromArgb("#0D0D1A"),
+                    BarTextColor = Color.FromArgb("#FFE66D")
+                };
             }
         }
 

@@ -35,7 +35,17 @@ public partial class ServerSetupViewModel : ObservableObject
         try
         {
             var url = ServerUrl.TrimEnd('/');
-            if (!url.StartsWith("http")) url = "http://" + url;
+
+            // Assume TLS when the scheme is left off. Defaulting to http sent the sign-in
+            // password in clear text, and against a server that redirects to https it also
+            // broke sign-in outright: the redirect turns the POST into a GET, and the reply
+            // is not the JSON the app is waiting for. Someone who genuinely wants plain
+            // HTTP can still type "http://" and get it.
+            if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                url = "https://" + url;
+            }
 
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             // Try /api/genres as a lightweight test; 401 = server is alive but needs auth (that's OK)
@@ -62,9 +72,10 @@ public partial class ServerSetupViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void RemoveServer(string id)
+    private async Task RemoveServerAsync(string id)
     {
-        _storage.Remove(id);
+        // Also erases that server's tokens from the keychain.
+        await _storage.RemoveAsync(id);
         LoadServers();
     }
 

@@ -20,6 +20,18 @@ public class JwtSettings
 
 public class TokenService : ITokenService
 {
+    /// <summary>
+    /// Present and "true" while the holder has not replaced a bootstrap or
+    /// administrator-assigned password. See <see cref="SonaFlyUI.Server.Api.Middleware.PasswordChangeRequiredMiddleware"/>.
+    /// </summary>
+    public const string MustChangePasswordClaim = "must_change_password";
+
+    /// <summary>
+    /// The holder's Identity security stamp at the time the token was issued. Every
+    /// request re-checks it, so rotating the stamp invalidates tokens already in the wild.
+    /// </summary>
+    public const string SecurityStampClaim = "security_stamp";
+
     private readonly JwtSettings _settings;
 
     public TokenService(IOptions<JwtSettings> settings)
@@ -34,8 +46,14 @@ public class TokenService : ITokenService
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Name, user.UserName ?? string.Empty),
             new(ClaimTypes.Email, user.Email ?? string.Empty),
-            new("display_name", user.DisplayName)
+            new("display_name", user.DisplayName),
+            new(SecurityStampClaim, user.SecurityStamp ?? string.Empty)
         };
+
+        if (user.MustChangePassword)
+        {
+            claims.Add(new Claim(MustChangePasswordClaim, "true"));
+        }
 
         foreach (var role in roles)
         {

@@ -12,8 +12,9 @@ dist/
 # Environment secrets
 .env
 
-# Local data (artwork cache, database)
+# Local data (artwork cache, database, Data Protection key ring)
 **/data/artwork/
+**/data/keys/
 *.db
 *.db-shm
 *.db-wal
@@ -25,6 +26,9 @@ Thumbs.db
 # IDE
 *.swp
 *.swo
+
+# Local server output
+_server.txt
 
 # Marketing site (separate deployment)
 SonaFlyWeb/

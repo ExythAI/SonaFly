@@ -1,0 +1,346 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+# A push that supersedes an in-flight run cancels it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep the SPA out of the server build: the web job builds and checks it properly,
+  # and the server projects do not need its output to compile or test.
+  DOTNET_SKIP_SPA: -p:SkipSpaBuild=true
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  server:
+    name: Server build and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No version here on purpose: global.json pins it, so CI and a developer
+      # machine resolve the same SDK, and a mismatch fails loudly rather than
+      # building against whatever happens to be installed.
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore tests/SonaFlyUI.Server.Tests/SonaFlyUI.Server.Tests.csproj $DOTNET_SKIP_SPA
+
+      - name: Build
+        run: dotnet build tests/SonaFlyUI.Server.Tests/SonaFlyUI.Server.Tests.csproj --no-restore -c Release $DOTNET_SKIP_SPA
+
+      - name: Test
+        run: >
+          dotnet test tests/SonaFlyUI.Server.Tests/SonaFlyUI.Server.Tests.csproj
+          --no-build -c Release $DOTNET_SKIP_SPA
+          --logger "trx;LogFileName=server-tests.trx"
+          --results-directory TestResults
+
+      - name: Check for outstanding EF migrations
+        # A model change without a migration builds fine and then fails at runtime on
+        # someone's server, so catch the drift here instead.
+        #
+        # Runs against the Release output the Build step already produced. Letting EF
+        # rebuild would use the default Debug configuration, which nothing else in this job
+        # touched, and would pull the SPA into a job that deliberately skips it. Everything
+        # after `--` is passed to the application rather than to MSBuild, so a build
+        # property there was only ever ignored; --no-build removes the need for one.
+        #
+        # SonaFlyDbContextFactory supplies the design-time context, so this needs no JWT
+        # secret, deployment configuration or real database.
+        run: |
+          dotnet tool install --global dotnet-ef --version 10.*
+          dotnet ef migrations has-pending-model-changes \
+            --project SonaFlyUI/SonaFlyUI.Server/SonaFlyUI.Server.csproj \
+            --configuration Release \
+            --no-build
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-test-results
+          path: TestResults/
+
+  web:
+    name: Web checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: SonaFlyUI/sonaflyui.client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: SonaFlyUI/sonaflyui.client/package-lock.json
+
+      - run: npm ci
+
+      # Lint runs with --max-warnings 0, so a new warning fails the build.
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+  container:
+    name: Container image and health check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -f SonaFlyUI/SonaFlyUI.Server/Dockerfile -t sonafly:ci .
+
+      - name: Start container
+        run: |
+          docker run -d --name sonafly-ci -p 8080:8080 \
+            -e Jwt__Secret="$(openssl rand -base64 48)" \
+            sonafly:ci
+
+      - name: Wait for the health check to report healthy
+        # This is the regression test for the probe itself: the previous Dockerfile
+        # called curl from a stage that had been discarded, so the container could
+        # never become healthy.
+        run: |
+          for i in $(seq 1 60); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' sonafly-ci)
+            echo "attempt $i: $status"
+            [ "$status" = "healthy" ] && exit 0
+            [ "$status" = "unhealthy" ] && break
+            sleep 2
+          done
+          echo "::error::Container did not become healthy"
+          docker inspect --format='{{json .State.Health}}' sonafly-ci
+          docker logs sonafly-ci
+          exit 1
+
+      - name: Health endpoint reports database readiness
+        run: |
+          body=$(curl -fsS http://localhost:8080/api/health)
+          echo "$body"
+          echo "$body" | grep -q '"database":"Healthy"'
+
+      - name: Application runs as a non-root user
+        run: |
+          uid=$(docker exec sonafly-ci id -u)
+          echo "uid=$uid"
+          [ "$uid" != "0" ]
+
+      - name: The app can write its data directories
+        run: docker exec sonafly-ci sh -c 'test -w /app/data/db && test -w /app/data/keys'
+
+      - name: Range requests are served, so audio can seek
+        # A player seeks by asking for a byte range. A server that answers 200 with the
+        # whole body instead makes scrubbing download the track from the start each time.
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-1' http://localhost:8080/index.html)
+          echo "index.html with a Range header: $code"
+          [ "$code" = "206" ] || [ "$code" = "404" ]
+
+      - name: Upgrading over a root-owned data volume fails loudly, not silently
+        # Docker only seeds a volume from the image when the volume is empty, so a volume
+        # created by an older root-running image keeps root ownership and the non-root user
+        # cannot write to it. Startup migrates before serving anything, so the container
+        # dies with SQLite error 8 ("attempt to write a readonly database") rather than
+        # coming up and quietly failing to save. README documents the chown that repairs it.
+        run: |
+          docker volume create sonafly-legacy-db
+          docker run --rm -v sonafly-legacy-db:/data alpine \
+            sh -c 'touch /data/sonafly.db && chown -R 0:0 /data && chmod 700 /data'
+
+          docker run -d --name sonafly-upgrade -p 8081:8080 \
+            -e Jwt__Secret="$(openssl rand -base64 48)" \
+            -v sonafly-legacy-db:/app/data/db \
+            sonafly:ci
+
+          # It must not report itself healthy while it cannot write its database.
+          sleep 20
+          status=$(docker inspect --format='{{.State.Health.Status}}' sonafly-upgrade)
+          echo "status with a root-owned volume: $status"
+          docker logs sonafly-upgrade | tail -20
+          [ "$status" != "healthy" ]
+
+          # And the documented repair actually repairs it.
+          docker rm -f sonafly-upgrade
+          appuid=$(docker run --rm --user root sonafly:ci sh -c 'echo $APP_UID')
+          echo "the image runs as uid $appuid"
+          docker run --rm -v sonafly-legacy-db:/data alpine             sh -c "chown -R $appuid:$appuid /data && chmod 755 /data"
+          docker run -d --name sonafly-upgrade -p 8081:8080 \
+            -e Jwt__Secret="$(openssl rand -base64 48)" \
+            -v sonafly-legacy-db:/app/data/db \
+            sonafly:ci
+          for i in $(seq 1 60); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' sonafly-upgrade)
+            [ "$status" = "healthy" ] && break
+            sleep 2
+          done
+          docker logs sonafly-upgrade | tail -20
+          [ "$status" = "healthy" ]
+
+      - name: Stop the upgrade container
+        if: always()
+        run: |
+          docker rm -f sonafly-upgrade || true
+          docker volume rm sonafly-legacy-db || true
+
+      - name: Container logs
+        if: always()
+        run: docker logs sonafly-ci
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f sonafly-ci || true
+
+  compose:
+    name: Compose files are valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate both deployment configurations
+        working-directory: docker
+        run: |
+          cp .env.example .env
+          docker compose -f docker-compose.yml config >/dev/null
+          docker compose -f docker-compose.tls.yml config >/dev/null
+
+      - name: Validate the Caddyfile with the image that runs it
+        # `docker compose config` only checks the compose file. A Caddyfile that Caddy
+        # refuses to parse passes that and then fails at deploy time, so ask Caddy itself.
+        working-directory: docker
+        run: |
+          docker run --rm \
+            -e SONAFLY_DOMAIN=sonafly.example.com \
+            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+
+  tls-smoke:
+    name: TLS deployment smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure a local-only TLS deployment
+        # A public domain cannot be reached from a runner, so Caddy issues its own
+        # certificate for localhost instead of going to ACME. Everything else — the proxy
+        # in front, forwarded headers, UseHttps on the app — is the recommended setup.
+        working-directory: docker
+        run: |
+          cp .env.example .env
+          sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -base64 48)|" .env
+          sed -i "s|^SONAFLY_DOMAIN=.*|SONAFLY_DOMAIN=localhost|" .env
+          sed -i "s|^ADMIN_DEFAULT_PASSWORD=.*|#ADMIN_DEFAULT_PASSWORD=|" .env
+          # The library bind mount points at a path that does not exist on a runner.
+          sed -i "s|- /mnt/music:/music/library-main:ro|- ./ci-music:/music/library-main:ro|" docker-compose.tls.yml
+          mkdir -p ci-music
+          # Caddy serves an internally-issued certificate for localhost rather than
+          # attempting the ACME challenge against a name that does not resolve here.
+          sed -i "s|^{\$SONAFLY_DOMAIN} {|{\$SONAFLY_DOMAIN} {\n\ttls internal|" Caddyfile
+
+      - name: Start the stack
+        working-directory: docker
+        run: docker compose -f docker-compose.tls.yml up -d --build
+
+      - name: Wait for the application to be healthy
+        working-directory: docker
+        run: |
+          for i in $(seq 1 90); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' "$(docker compose -f docker-compose.tls.yml ps -q sonafly)" 2>/dev/null || echo starting)
+            echo "attempt $i: $status"
+            [ "$status" = "healthy" ] && exit 0
+            sleep 2
+          done
+          docker compose -f docker-compose.tls.yml logs
+          exit 1
+
+      - name: Health is a database check, not a redirect
+        working-directory: docker
+        # The probe runs inside the container over plain HTTP. With UseHttps on, an
+        # unguarded redirect would answer 307 — which curl reports as success — and the
+        # container would look healthy without the database ever being touched.
+        run: |
+          body=$(docker compose -f docker-compose.tls.yml exec -T sonafly curl -fsS http://localhost:8080/api/health)
+          echo "$body"
+          echo "$body" | grep -q '"database":"Healthy"'
+
+      - name: HTTP redirects to HTTPS
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost' http://localhost/)
+          echo "plain HTTP: $code"
+          case "$code" in 301|302|307|308) ;; *) exit 1 ;; esac
+
+      - name: HTTPS serves the application
+        run: curl -fsSk https://localhost/ -o /dev/null
+
+      - name: The app sees the request as HTTPS through the proxy
+        # Forwarded headers are trusted only from the compose network. If they were not
+        # honoured the login cookie would come back without Secure.
+        run: |
+          headers=$(curl -sSk -D - -o /dev/null -X POST https://localhost/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -H 'X-SonaFly-Client: web' \
+            --data '{"username":"admin","password":"definitely-wrong","useCookie":true}')
+          echo "$headers"
+          # Wrong credentials on purpose: what matters is that the request reached the app
+          # over what it believes is HTTPS rather than being redirected or refused.
+          echo "$headers" | grep -qi '^HTTP/.* 401'
+
+      - name: WebSockets are proxied for the auditorium hub
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -k https://localhost/hubs/auditorium/negotiate?negotiateVersion=1 -X POST)
+          echo "hub negotiate: $code"
+          # 401 without a token is the right answer; 404 or 502 would mean the route never
+          # reached the app.
+          [ "$code" = "401" ]
+
+      - name: Range requests survive the proxy
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -k -H 'Range: bytes=0-1' https://localhost/index.html)
+          echo "range request: $code"
+          [ "$code" = "206" ] || [ "$code" = "404" ]
+
+      - name: Stack logs
+        if: always()
+        working-directory: docker
+        run: docker compose -f docker-compose.tls.yml logs
+
+      - name: Tear down
+        if: always()
+        working-directory: docker
+        run: docker compose -f docker-compose.tls.yml down -v
+
+  mobile:
+    name: MAUI build (Windows target)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui
+
+      # Only the Windows target is built here. Android additionally needs the Android
+      # SDK and a JDK, and iOS/MacCatalyst need a macOS runner; the shared code that
+      # matters is compiled either way.
+      - name: Build
+        run: dotnet build SonaFly/SonaFly.csproj -f net10.0-windows10.0.19041.0 -c Release

@@ -1,28 +1,31 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { useSearchFilter } from '../hooks/useSearchFilter';
+import { QueryError, EmptyState } from '../components/PageParts';
 import { useQuery } from '@tanstack/react-query';
 import { Box, Typography, TextField, InputAdornment, Card, CardContent, Grid, Chip, CircularProgress, CardActionArea, IconButton } from '@mui/material';
 import { Search as SearchIcon, PlayArrow, Pause } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { browseApi, artworkUrl } from '../api/client';
+import type { TrackListItemDto } from '../api/types.ts';
 import { usePlayer } from '../components/PlayerContext';
 
 const SearchPage: React.FC = () => {
-    const [query, setQuery] = useState('');
+    const { input, setInput, value: query } = useSearchFilter();
     const navigate = useNavigate();
-    const { play, pause, currentTrack, isPlaying } = usePlayer();
-    const { data, isLoading } = useQuery({
+    const { play, pause, resume, currentTrack, isPlaying, sharedRoom } = usePlayer();
+    const { data, isLoading, isError, error, refetch } = useQuery({
         queryKey: ['search', query],
         queryFn: () => browseApi.search(query, 20).then(r => r.data),
         enabled: query.length >= 2,
     });
 
-    const fmt = (s?: number) => {
+    const fmt = (s?: number | null) => {
         if (!s) return '--';
         const m = Math.floor(s / 60);
         return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
     };
 
-    const handlePlayTrack = (t: any) => {
+    const handlePlayTrack = (t: TrackListItemDto) => {
         play({
             id: t.id,
             title: t.title,
@@ -37,19 +40,21 @@ const SearchPage: React.FC = () => {
         <Box>
             <Typography variant="h4" gutterBottom>Search</Typography>
             <TextField fullWidth placeholder="Search artists, albums, tracks..."
-                value={query} onChange={e => setQuery(e.target.value)}
+                label="Search music" value={input} onChange={e => setInput(e.target.value)}
                 slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> } }}
                 sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: 3, bgcolor: 'background.paper' } }} />
 
+            {isError && <QueryError error={error} retry={refetch} />}
+            {query.length < 2 && <EmptyState title="Find your next listen" description="Enter at least two characters to search artists, albums, and tracks." />}
             {isLoading && <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>}
 
-            {data && (
+            {!isError && data && (
                 <Grid container spacing={3}>
                     {data.artists?.length > 0 && (
                         <Grid size={{ xs: 12 }}>
                             <Typography variant="h6" gutterBottom>Artists <Chip size="small" label={data.artists.length} sx={{ ml: 1, height: 20 }} /></Typography>
                             <Grid container spacing={1.5}>
-                                {data.artists.map((a: any) => (
+                                {data.artists.map((a) => (
                                     <Grid key={a.id} size={{ xs: 12, sm: 6, md: 4 }}>
                                         <Card>
                                             <CardActionArea onClick={() => navigate(`/artists/${a.id}`)}>
@@ -73,7 +78,7 @@ const SearchPage: React.FC = () => {
                         <Grid size={{ xs: 12 }}>
                             <Typography variant="h6" gutterBottom>Albums <Chip size="small" label={data.albums.length} sx={{ ml: 1, height: 20 }} /></Typography>
                             <Grid container spacing={1.5}>
-                                {data.albums.map((a: any) => (
+                                {data.albums.map((a) => (
                                     <Grid key={a.id} size={{ xs: 12, sm: 6, md: 4 }}>
                                         <Card>
                                             <CardActionArea onClick={() => navigate(`/albums/${a.id}`)}>
@@ -103,8 +108,8 @@ const SearchPage: React.FC = () => {
                     {data.tracks?.length > 0 && (
                         <Grid size={{ xs: 12 }}>
                             <Typography variant="h6" gutterBottom>Tracks <Chip size="small" label={data.tracks.length} sx={{ ml: 1, height: 20 }} /></Typography>
-                            {data.tracks.map((t: any) => {
-                                const isCurrent = currentTrack?.id === t.id;
+                            {data.tracks.map((t) => {
+                                const isCurrent = !sharedRoom && currentTrack?.id === t.id;
                                 return (
                                     <Card key={t.id} sx={{ mb: 1, ...(isCurrent ? { border: '1px solid', borderColor: 'primary.main', bgcolor: 'rgba(124,77,255,0.08)' } : {}) }}>
                                         <CardContent sx={{ py: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -115,7 +120,7 @@ const SearchPage: React.FC = () => {
                                                 <Typography variant="subtitle2" sx={{ color: isCurrent ? 'primary.light' : 'text.primary' }}>{t.title}</Typography>
                                                 <Typography variant="caption" color="text.secondary">{t.artistName} · {t.albumTitle} · {fmt(t.durationSeconds)}</Typography>
                                             </Box>
-                                            <IconButton size="small" onClick={() => isCurrent && isPlaying ? pause() : handlePlayTrack(t)}>
+                                            <IconButton size="small" aria-label={isCurrent && isPlaying ? `Pause ${t.title}` : `Play ${t.title}`} onClick={() => isCurrent ? (isPlaying ? pause() : resume()) : handlePlayTrack(t)}>
                                                 {isCurrent && isPlaying ? (
                                                     <Pause fontSize="small" sx={{ color: 'primary.light' }} />
                                                 ) : (

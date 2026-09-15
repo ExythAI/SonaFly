@@ -55,11 +55,13 @@ public class MetadataReader : IMetadataReader
         {
             _logger.LogWarning(ex, "Failed to read metadata from {FilePath}", filePath);
 
-            // Return fallback with filename as title
+            // Return a fallback with the filename as title, flagged so that callers can tell
+            // "this file has no tags" apart from "we could not read this file's tags".
             return Task.FromResult(new AudioMetadata
             {
                 Title = Path.GetFileNameWithoutExtension(filePath),
-                MimeType = FileScanner.GetMimeType(Path.GetExtension(filePath))
+                MimeType = FileScanner.GetMimeType(Path.GetExtension(filePath)),
+                ReadFailed = true
             });
         }
     }

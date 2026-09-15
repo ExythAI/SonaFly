@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SonaFlyUI.Server.Application.Common;
 using SonaFlyUI.Server.Application.DTOs;
 using SonaFlyUI.Server.Application.Interfaces;
 using SonaFlyUI.Server.Domain.Entities;
@@ -32,19 +33,12 @@ public class LibraryRootService : ILibraryRootService
 
     public async Task<Guid> CreateAsync(CreateLibraryRootRequest request, CancellationToken ct)
     {
-        // Validate no duplicate path
-        var exists = await _db.LibraryRoots.AnyAsync(lr => lr.Path == request.Path, ct);
-        if (exists)
-            throw new InvalidOperationException($"A library root with path '{request.Path}' already exists.");
-
-        // Validate path exists on filesystem
-        if (!Directory.Exists(request.Path))
-            throw new ArgumentException($"Path '{request.Path}' does not exist or is not accessible.");
+        var path = await ValidateAndNormalizePathAsync(request.Path, excludeId: null, ct);
 
         var entity = new LibraryRoot
         {
             Name = request.Name.Trim(),
-            Path = request.Path.TrimEnd('/', '\\'),
+            Path = path,
             IsReadOnly = request.IsReadOnly,
             IsEnabled = true
         };
@@ -52,6 +46,37 @@ public class LibraryRootService : ILibraryRootService
         _db.LibraryRoots.Add(entity);
         await _db.SaveChangesAsync(ct);
         return entity.Id;
+    }
+
+    /// <summary>
+    /// Canonicalizes a requested root path and applies the same accessibility and duplicate
+    /// rules on create and on update.
+    /// <para>
+    /// Normalization happens before the duplicate check so the check sees the value that will
+    /// actually be stored, and it goes through <see cref="FileSystemPaths"/> rather than
+    /// trimming separators by hand — blind trimming turns "/" into "" and "C:\" into the
+    /// drive-relative "C:" (backlog N18).
+    /// </para>
+    /// </summary>
+    private async Task<string> ValidateAndNormalizePathAsync(string requestedPath, Guid? excludeId, CancellationToken ct)
+    {
+        if (!FileSystemPaths.TryNormalize(requestedPath, out var normalized, out var error))
+            throw new ArgumentException(error);
+
+        if (!Directory.Exists(normalized))
+            throw new ArgumentException($"Path '{normalized}' does not exist or is not accessible.");
+
+        // Compare canonicalized values: stored rows may predate normalization, and on Windows
+        // two spellings differing only in case name the same directory.
+        var existing = await _db.LibraryRoots
+            .Where(lr => excludeId == null || lr.Id != excludeId)
+            .Select(lr => lr.Path)
+            .ToListAsync(ct);
+
+        if (existing.Any(p => FileSystemPaths.AreSame(p, normalized)))
+            throw new InvalidOperationException($"A library root with path '{normalized}' already exists.");
+
+        return normalized;
     }
 
     public async Task UpdateAsync(Guid id, UpdateLibraryRootRequest request, CancellationToken ct)
@@ -62,9 +87,9 @@ public class LibraryRootService : ILibraryRootService
         if (request.Name != null) entity.Name = request.Name.Trim();
         if (request.Path != null)
         {
-            var dup = await _db.LibraryRoots.AnyAsync(lr => lr.Path == request.Path && lr.Id != id, ct);
-            if (dup) throw new InvalidOperationException($"Another library root already uses path '{request.Path}'.");
-            entity.Path = request.Path.TrimEnd('/', '\\');
+            // Update now applies exactly the same validation as create; it previously accepted
+            // an unreachable path silently.
+            entity.Path = await ValidateAndNormalizePathAsync(request.Path, excludeId: id, ct);
         }
         if (request.IsEnabled.HasValue) entity.IsEnabled = request.IsEnabled.Value;
         if (request.IsReadOnly.HasValue) entity.IsReadOnly = request.IsReadOnly.Value;

@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
+import { useSearchFilter } from '../hooks/useSearchFilter';
+import { QueryError } from '../components/PageParts';
 import { useQuery } from '@tanstack/react-query';
 import {
     Box, Typography, Card, CardContent, Grid, CircularProgress, CardActionArea, Button,
-    TextField, InputAdornment, IconButton, Pagination
+    TextField, InputAdornment, IconButton, Pagination, Stack
 } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search as SearchIcon, PlayArrow, Pause, ArrowUpward, ArrowDownward } from '@mui/icons-material';
 import { browseApi, artworkUrl } from '../api/client';
+import type { TrackListItemDto } from '../api/types.ts';
 import { usePlayer } from '../components/PlayerContext';
 
 const PAGE_SIZE = 50;
@@ -14,7 +17,7 @@ const PAGE_SIZE = 50;
 const ArtistsPage: React.FC = () => {
     const navigate = useNavigate();
     const [pageSize, setPageSize] = useState(PAGE_SIZE);
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isError, error, refetch } = useQuery({
         queryKey: ['artists', pageSize],
         queryFn: () => browseApi.artists(1, pageSize).then(r => r.data)
     });
@@ -24,10 +27,10 @@ const ArtistsPage: React.FC = () => {
         <Box>
             <Typography variant="h4" gutterBottom>Artists</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>{data?.totalCount ?? 0} artists in library</Typography>
-            {isLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : (
+            {isError ? <QueryError error={error} retry={refetch} /> : isLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : (
                 <>
                     <Grid container spacing={2}>
-                        {data?.items?.map((a: any) => (
+                        {data?.items?.map((a) => (
                             <Grid key={a.id} size={{ xs: 6, sm: 4, md: 3, lg: 2 }}>
                                 <Card><CardActionArea onClick={() => navigate(`/artists/${a.id}`)}><CardContent sx={{ textAlign: 'center', py: 3 }}>
                                     <Box sx={{ width: 64, height: 64, borderRadius: '50%', mx: 'auto', mb: 1.5, bgcolor: 'rgba(124,77,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -57,7 +60,7 @@ const AlbumsPage: React.FC = () => {
     const [searchParams] = useSearchParams();
     const artistId = searchParams.get('artistId') ?? undefined;
     const [pageSize, setPageSize] = useState(PAGE_SIZE);
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isError, error, refetch } = useQuery({
         queryKey: ['albums', artistId, pageSize],
         queryFn: () => browseApi.albums(1, pageSize, artistId).then(r => r.data)
     });
@@ -81,10 +84,10 @@ const AlbumsPage: React.FC = () => {
                     </Typography>
                 )}
             </Typography>
-            {isLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : (
+            {isError ? <QueryError error={error} retry={refetch} /> : isLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : (
                 <>
                     <Grid container spacing={2}>
-                        {data?.items?.map((a: any) => (
+                        {data?.items?.map((a) => (
                             <Grid key={a.id} size={{ xs: 6, sm: 4, md: 3, lg: 2 }}>
                                 <Card><CardActionArea onClick={() => navigate(`/albums/${a.id}`)}>
                                     <Box sx={{ pt: '100%', position: 'relative', bgcolor: 'rgba(0,229,255,0.08)' }}>
@@ -123,47 +126,37 @@ const COLUMNS = [
 
 const TracksPage: React.FC = () => {
     const navigate = useNavigate();
-    const { play, pause, currentTrack, isPlaying } = usePlayer();
-    const [page, setPage] = useState(1);
-    const [sortBy, setSortBy] = useState('title');
-    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-    const [filter, setFilter] = useState('');
-    const [filterInput, setFilterInput] = useState('');
+    const { play, pause, resume, currentTrack, isPlaying, sharedRoom } = usePlayer();
+    const [params, setParams] = useSearchParams();
+    const page = Math.max(1, Number(params.get('page')) || 1);
+    const sortBy = params.get('sort') ?? 'title';
+    const sortDir = params.get('direction') === 'desc' ? 'desc' : 'asc';
+    const { input: filterInput, setInput: setFilterInput, value: filter } = useSearchFilter();
+    const setPage = (value: number) => setParams(previous => { const next = new URLSearchParams(previous); next.set('page', String(value)); return next; });
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isError, error, refetch } = useQuery({
         queryKey: ['tracks', page, sortBy, sortDir, filter],
         queryFn: () => browseApi.tracks(page, PAGE_SIZE, sortBy, sortDir, filter).then(r => r.data),
     });
 
     const totalPages = Math.ceil((data?.totalCount ?? 0) / PAGE_SIZE);
 
-    const handleSort = (col: string) => {
-        if (sortBy === col) {
-            setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortBy(col);
-            setSortDir('asc');
-        }
-        setPage(1);
-    };
+    const handleSort = (col: string) => setParams(previous => {
+        const next = new URLSearchParams(previous);
+        next.set('sort', col);
+        next.set('direction', sortBy === col && sortDir === 'asc' ? 'desc' : 'asc');
+        next.delete('page');
+        return next;
+    });
 
-    const handleFilter = () => {
-        setFilter(filterInput);
-        setPage(1);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') handleFilter();
-    };
-
-    const fmt = (s?: number) => {
+    const fmt = (s?: number | null) => {
         if (!s) return '--';
         const m = Math.floor(s / 60);
         return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
     };
 
-    const handlePlayTrack = (t: any) => {
-        const allTracks = data?.items?.map((tr: any) => ({
+    const handlePlayTrack = (t: TrackListItemDto) => {
+        const allTracks = data?.items?.map((tr) => ({
             id: tr.id, title: tr.title, artistName: tr.artistName,
             albumTitle: tr.albumTitle, artworkId: tr.artworkId, durationSeconds: tr.durationSeconds,
         })) ?? [];
@@ -190,52 +183,61 @@ const TracksPage: React.FC = () => {
     return (
         <Box>
             <Typography variant="h4" gutterBottom>Tracks</Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3 }}>
                 <Typography variant="body2" color="text.secondary">
                     {data?.totalCount ?? 0} tracks{filter ? ` matching "${filter}"` : ''}
                 </Typography>
                 <Box sx={{ flex: 1 }} />
                 <TextField
-                    size="small" placeholder="Filter tracks..."
+                    size="small" label="Search tracks" placeholder="Filter tracks..."
                     value={filterInput}
                     onChange={e => setFilterInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    onBlur={handleFilter}
                     slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
                     sx={{ width: 280, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'background.paper' } }}
                 />
                 {filter && (
-                    <Button size="small" variant="text" onClick={() => { setFilter(''); setFilterInput(''); setPage(1); }}>
+                    <Button size="small" variant="text" onClick={() => { setFilterInput(''); }}>
                         Clear
                     </Button>
                 )}
             </Box>
 
-            {isLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : (
+            {isError ? <QueryError error={error} retry={refetch} /> : isLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : (
                 <>
                     <Card>
-                        <Box sx={{ overflowX: 'auto' }}>
+                        <Box sx={{ display: { xs: 'block', sm: 'none' } }}>
+                            {data?.items?.map((track) => {
+                                const selected = !sharedRoom && currentTrack?.id === track.id;
+                                return <Stack key={track.id} direction="row" alignItems="center" spacing={1} sx={{ p: 1.5, borderBottom: '1px solid', borderColor: 'divider', bgcolor: selected ? 'rgba(124,77,255,.1)' : undefined }}>
+                                    <IconButton aria-label={selected && isPlaying ? `Pause ${track.title}` : `Play ${track.title}`} onClick={() => selected ? (isPlaying ? pause() : resume()) : handlePlayTrack(track)}>{selected && isPlaying ? <Pause /> : <PlayArrow />}</IconButton>
+                                    <Box minWidth={0} flex={1}><Typography variant="body2" fontWeight={600} noWrap>{track.title}</Typography><Typography variant="caption" color="text.secondary" noWrap component="div">{track.artistName || 'Unknown artist'}</Typography></Box>
+                                    <Typography variant="caption" color="text.secondary">{fmt(track.durationSeconds)}</Typography>
+                                </Stack>;
+                            })}
+                            {!data?.items?.length && <Typography textAlign="center" color="text.secondary" p={3}>No matching tracks.</Typography>}
+                        </Box>
+                        <Box sx={{ overflowX: 'auto', display: { xs: 'none', sm: 'block' } }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                                         <th style={{ width: 50, padding: '12px 8px' }}></th>
                                         {COLUMNS.map(col => (
-                                            <th key={col.key} style={thStyle(col.key)} onClick={() => handleSort(col.key)}>
-                                                {col.label}<SortIcon col={col.key} />
+                                            <th key={col.key} style={thStyle(col.key)} aria-sort={sortBy === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                                <Button size="small" color="inherit" onClick={() => handleSort(col.key)}>{col.label}<SortIcon col={col.key} /></Button>
                                             </th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {data?.items?.map((t: any) => {
-                                        const isCurrent = currentTrack?.id === t.id;
+                                    {data?.items?.map((t) => {
+                                        const isCurrent = !sharedRoom && currentTrack?.id === t.id;
                                         return (
                                             <tr key={t.id} style={{
                                                 borderBottom: '1px solid rgba(255,255,255,0.04)',
                                                 background: isCurrent ? 'rgba(124,77,255,0.08)' : undefined,
                                             }}>
                                                 <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                                                    <IconButton size="small" onClick={() => isCurrent && isPlaying ? pause() : handlePlayTrack(t)}>
+                                                    <IconButton size="small" aria-label={isCurrent && isPlaying ? `Pause ${t.title}` : `Play ${t.title}`} onClick={() => isCurrent ? (isPlaying ? pause() : resume()) : handlePlayTrack(t)}>
                                                         {isCurrent && isPlaying ? (
                                                             <Pause fontSize="small" sx={{ color: '#B388FF' }} />
                                                         ) : (

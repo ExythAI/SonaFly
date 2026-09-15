@@ -11,6 +11,9 @@ public partial class MiniPlayerControl : ContentView
     private MiniPlayerViewModel? _vm;
     private bool _initialized;
     private bool _isActive;
+    private int _sourceRequest;
+    private bool _mediaOpened;
+    private double? _pendingSeek;
 
     // Track ALL instances so we can stop old ones when a new track starts
     private static readonly List<MiniPlayerControl> _allPlayers = [];
@@ -78,20 +81,27 @@ public partial class MiniPlayerControl : ContentView
     {
         if (!_isActive) return;
 
-        if (e.PropertyName == nameof(AudioPlayerService.CurrentStreamUrl))
+        if (e.PropertyName == nameof(AudioPlayerService.StreamVersion))
         {
-            MainThread.BeginInvokeOnMainThread(() =>
+            _mediaOpened = false;
+            _pendingSeek = null;
+            var request = ++_sourceRequest;
+            var version = _player?.StreamVersion;
+            MainThread.BeginInvokeOnMainThread(async () =>
             {
-                // Stop all OTHER players first — prevents slapback
                 StopAllExceptActive();
-
-                var url = _player?.CurrentStreamUrl;
-                if (!string.IsNullOrEmpty(url))
-                    Player.Source = MediaSource.FromUri(url);
-                else
+                Player.Stop();
+                Player.Source = null;
+                try
                 {
-                    Player.Stop();
-                    Player.Source = null;
+                    var url = _player == null ? null : await _player.GetCurrentStreamUrlAsync();
+                    if (request != _sourceRequest || !_isActive || version != _player?.StreamVersion) return;
+                    if (!string.IsNullOrEmpty(url)) Player.Source = MediaSource.FromUri(url);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Unable to load stream: {ex.Message}");
+                    if (request == _sourceRequest) _player?.Pause();
                 }
             });
         }
@@ -114,17 +124,33 @@ public partial class MiniPlayerControl : ContentView
             _player.Next();
     }
 
+    private async void OnMediaOpened(object? sender, EventArgs e)
+    {
+        _mediaOpened = true;
+        if (_pendingSeek is double position)
+        {
+            _pendingSeek = null;
+            try { await Player.SeekTo(TimeSpan.FromSeconds(position)); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
+        }
+        if (_player?.IsPlaying != true) Player.Pause();
+    }
+
     private void OnSeekRequested(double positionSeconds)
     {
         if (!_isActive) return;
         MainThread.BeginInvokeOnMainThread(async () =>
         {
-            // Small delay to let MediaElement load the source
-            await Task.Delay(500);
+            if (!_mediaOpened)
+            {
+                _pendingSeek = positionSeconds;
+                return;
+            }
             try { await Player.SeekTo(TimeSpan.FromSeconds(positionSeconds)); }
-            catch { /* MediaElement may not be ready yet */ }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
         });
     }
+
 }
 
 public partial class MiniPlayerViewModel : ObservableObject

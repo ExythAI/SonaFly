@@ -8,7 +8,8 @@ public record UserInfoDto(
     bool IsEnabled,
     IEnumerable<string> Roles,
     DateTime? LastLoginUtc,
-    DateTime CreatedUtc
+    DateTime CreatedUtc,
+    bool MustChangePassword = false
 );
 
 public record CreateUserRequest(

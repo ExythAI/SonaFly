@@ -10,12 +10,27 @@ public partial class SettingsViewModel : ObservableObject
 {
     private readonly SonaFlyApiClient _api;
     private readonly ServerStorageService _storage;
+    private readonly AudioPlayerService _player;
+    private readonly AuditoriumService _auditorium;
 
-    public SettingsViewModel(SonaFlyApiClient api, ServerStorageService storage)
+    public SettingsViewModel(
+        SonaFlyApiClient api,
+        ServerStorageService storage,
+        AudioPlayerService player,
+        AuditoriumService auditorium)
     {
         _api = api;
         _storage = storage;
+        _player = player;
+        _auditorium = auditorium;
         LoadServers();
+
+        if (_storage.GetActive()?.MustChangePassword == true)
+        {
+            // This page is where such an account lands; say why, rather than leaving them
+            // to discover that nothing else works.
+            StatusMessage = "This account is still using a temporary password. Choose a new one to continue.";
+        }
     }
 
     // ── Server management ──
@@ -33,7 +48,31 @@ public partial class SettingsViewModel : ObservableObject
     {
         var active = _storage.GetActive();
         if (active != null)
-            _storage.ClearTokens(active.Id);
+        {
+            // Stop using the session before ending it: audio is streaming with a ticket
+            // minted from these credentials, and the hub connection is authenticated by them.
+            _player.Stop();
+            await _auditorium.LeaveAsync();
+
+            // Tell the server first, while the refresh token is still at hand. Clearing it
+            // locally only hides the credential; the refresh family stays usable for a week
+            // to anyone holding a copy.
+            var endedOnServer = await _api.LogoutAsync();
+            var cleared = await _storage.ClearTokensAsync(active.Id);
+
+            if (!cleared)
+            {
+                StatusMessage = endedOnServer
+                    ? "Signed out. The saved credential could not be erased from this device, but the server has ended the session."
+                    : "Signed out on this device only. The saved credential could not be erased and the server was not reachable.";
+                IsSuccess = false;
+            }
+            else if (!endedOnServer)
+            {
+                StatusMessage = "Signed out on this device. The server could not be reached, so the session may stay open until it expires.";
+                IsSuccess = false;
+            }
+        }
 
         // Navigate back to login
         if (Application.Current is App app)
@@ -75,7 +114,7 @@ public partial class SettingsViewModel : ObservableObject
             .DisplayAlert("Remove Server", $"Remove \"{server.Name}\"?", "Remove", "Cancel");
         if (!confirm) return;
 
-        _storage.Remove(server.Id);
+        await _storage.RemoveAsync(server.Id);
         LoadServers();
 
         // If no servers left, go to server setup
@@ -131,19 +170,33 @@ public partial class SettingsViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            var success = await _api.ChangePasswordAsync(CurrentPassword, NewPassword);
-            if (success)
+            var wasTemporary = _storage.GetActive()?.MustChangePassword == true;
+            var result = await _api.ChangePasswordAsync(CurrentPassword, NewPassword);
+
+            CurrentPassword = "";
+            NewPassword = "";
+            ConfirmPassword = "";
+
+            switch (result)
             {
-                StatusMessage = "Password changed successfully!";
-                IsSuccess = true;
-                CurrentPassword = "";
-                NewPassword = "";
-                ConfirmPassword = "";
-            }
-            else
-            {
-                StatusMessage = "Failed — check your current password.";
-                IsSuccess = false;
+                case ChangePasswordResult.Changed:
+                    StatusMessage = "Password changed successfully!";
+                    IsSuccess = true;
+                    // The account is no longer held at this page; let it into the app.
+                    if (wasTemporary && Application.Current is App app) app.NavigateToShell();
+                    break;
+
+                case ChangePasswordResult.ChangedButSignedOut:
+                    // The password is the new one, but this device has nothing usable left.
+                    StatusMessage = "Password changed. Sign in again with the new password.";
+                    IsSuccess = true;
+                    await LogoutAsync();
+                    break;
+
+                default:
+                    StatusMessage = "Failed — check your current password.";
+                    IsSuccess = false;
+                    break;
             }
         }
         catch (Exception ex)

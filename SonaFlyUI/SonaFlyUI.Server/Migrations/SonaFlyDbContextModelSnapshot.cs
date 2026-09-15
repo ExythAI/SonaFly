@@ -15,7 +15,7 @@ namespace SonaFlyUI.Server.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.3");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
@@ -231,6 +231,9 @@ namespace SonaFlyUI.Server.Migrations
 
                     b.Property<DateTimeOffset?>("LockoutEnd")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("MustChangePassword")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
@@ -653,6 +656,9 @@ namespace SonaFlyUI.Server.Migrations
                     b.Property<DateTime>("ExpiresUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("ModifiedUtc")
                         .HasColumnType("TEXT");
 
@@ -671,6 +677,8 @@ namespace SonaFlyUI.Server.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("FamilyId");
 
                     b.HasIndex("TokenHash");
 
@@ -704,6 +712,9 @@ namespace SonaFlyUI.Server.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("FilesScanned")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("FilesUnverified")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("FilesUpdated")

@@ -30,6 +30,7 @@
         <toolkit:MediaElement x:Name="Player" IsVisible="False" Grid.Row="1"
                               HeightRequest="0" WidthRequest="0"
                               ShouldAutoPlay="True"
+                              MediaOpened="OnMediaOpened"
                               MediaEnded="OnMediaEnded" />
     </Grid>
 </ContentView>

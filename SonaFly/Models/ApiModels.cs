@@ -14,8 +14,40 @@ public record RefreshResponse(string AccessToken, string RefreshToken, DateTime 
 
 public record UserInfo(
     Guid Id, string UserName, string Email, string DisplayName,
-    bool IsEnabled, IEnumerable<string> Roles, DateTime? LastLoginUtc, DateTime CreatedUtc
+    bool IsEnabled, IEnumerable<string> Roles, DateTime? LastLoginUtc, DateTime CreatedUtc,
+    // True while the account still holds a password an administrator chose, or the one
+    // generated when the server bootstrapped. The server refuses everything except the
+    // change itself until it is replaced, so the app must route there rather than into
+    // the library.
+    bool MustChangePassword = false
 );
+
+/// <summary>
+/// Credentials issued to replace the ones a password change just revoked.
+/// </summary>
+/// <remarks>
+/// Changing the password ends every session, including the one that asked for the change.
+/// The replacement pair is the only way to stay signed in; discarding it leaves the app
+/// holding tokens the server has already thrown away.
+/// </remarks>
+public record ChangePasswordResponse(string AccessToken, string? RefreshToken, DateTime ExpiresUtc);
+
+/// <summary>What happened to a password change, and to the session that asked for it.</summary>
+public enum ChangePasswordResult
+{
+    /// <summary>Changed, and the app holds the replacement credentials.</summary>
+    Changed,
+
+    /// <summary>Refused — most often the current password was wrong.</summary>
+    Rejected,
+
+    /// <summary>
+    /// Changed, but the replacement credentials could not be kept: the user switched
+    /// server or signed out while the request was in flight, or the server did not return
+    /// them. The password is the new one; this device has to sign in again.
+    /// </summary>
+    ChangedButSignedOut
+}
 
 // ── Browse ──
 public record PaginatedResult<T>(IReadOnlyList<T> Items, int TotalCount, int Page, int PageSize, int TotalPages);

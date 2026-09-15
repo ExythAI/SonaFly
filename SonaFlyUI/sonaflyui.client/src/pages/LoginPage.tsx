@@ -3,6 +3,7 @@ import {
     Box, Card, TextField, Typography, Button, CircularProgress, Alert
 } from '@mui/material';
 import { useAuth } from '../auth/AuthContext';
+import { errorMessage } from '../components/Feedback';
 import { useNavigate } from 'react-router-dom';
 
 const LoginPage: React.FC = () => {
@@ -20,8 +21,8 @@ const LoginPage: React.FC = () => {
         try {
             await login(username, password);
             navigate('/');
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Login failed');
+        } catch (err) {
+            setError(errorMessage(err));
         } finally {
             setLoading(false);
         }
@@ -33,21 +34,22 @@ const LoginPage: React.FC = () => {
             bgcolor: 'background.default',
             background: 'radial-gradient(ellipse at 50% 0%, rgba(124,77,255,0.15) 0%, transparent 60%)',
         }}>
-            <Card sx={{ p: 5, width: 420, textAlign: 'center' }}>
+            <Card sx={{ p: { xs: 3, sm: 5 }, width: 420, maxWidth: 'calc(100% - 32px)', textAlign: 'center' }}>
                 <Box
                     component="img"
-                    src="/sonafly_logo.png"
+                    src="/sonafly.png"
                     alt="SonaFly"
-                    sx={{ maxWidth: 320, width: '100%', height: 'auto', mx: 'auto', mb: 2, borderRadius: '16px' }}
+                    sx={{ maxWidth: 96, width: '100%', height: 'auto', mx: 'auto', mb: 2, borderRadius: '16px' }}
                 />
+                <Typography variant="h4" component="h1" mb={1}>SonaFly</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                     Sign in to your music server
                 </Typography>
                 {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
                 <form onSubmit={handleSubmit}>
-                    <TextField fullWidth label="Username" value={username}
+                    <TextField fullWidth autoComplete="username" required label="Username" value={username}
                         onChange={e => setUsername(e.target.value)} sx={{ mb: 2 }} autoFocus />
-                    <TextField fullWidth label="Password" type="password" value={password}
+                    <TextField fullWidth autoComplete="current-password" required label="Password" type="password" value={password}
                         onChange={e => setPassword(e.target.value)} sx={{ mb: 3 }} />
                     <Button fullWidth variant="contained" size="large" type="submit" disabled={loading}
                         sx={{ py: 1.5, fontSize: 16 }}>

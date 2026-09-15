@@ -45,7 +45,41 @@ public class AuditoriumStateService
 
 public class AuditoriumRoomState
 {
-    private readonly object _lock = new();
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private CancellationTokenSource? _trackEnd;
+    public bool QueueLoaded { get; set; }
+    public bool IsDeleted { get; set; }
+    public long PlaybackGeneration { get; private set; }
+
+    public async Task<IDisposable> EnterAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        return new GateLease(_gate);
+    }
+
+    private sealed class GateLease(SemaphoreSlim gate) : IDisposable
+    {
+        public void Dispose() => gate.Release();
+    }
+
+    public void CancelTrackEnd()
+    {
+        PlaybackGeneration++;
+        _trackEnd?.Cancel();
+        _trackEnd = null;
+    }
+
+    public CancellationTokenSource CreateTrackEnd(CancellationToken stoppingToken)
+    {
+        CancelTrackEnd();
+        _trackEnd = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        return _trackEnd;
+    }
+
+    public void ClearTrackEnd(CancellationTokenSource source)
+    {
+        if (ReferenceEquals(_trackEnd, source)) _trackEnd = null;
+    }
 
     public Guid AuditoriumId { get; set; }
 
@@ -76,24 +110,19 @@ public class AuditoriumRoomState
 
     public void AddUser(string connectionId, Guid userId, string displayName)
     {
-        lock (_lock)
-        {
-            ActiveUsers[connectionId] = new ActiveUserInfo(userId, displayName);
-        }
+        ActiveUsers[connectionId] = new ActiveUserInfo(userId, displayName);
     }
 
     public bool RemoveUser(string connectionId)
     {
-        lock (_lock)
-        {
-            ActiveUsers.Remove(connectionId);
-            return ActiveUsers.Count == 0;
-        }
+        ActiveUsers.Remove(connectionId);
+        return ActiveUsers.Count == 0;
     }
 
     public void StartTrack(Guid trackId, string title, string? artistName, Guid? artworkId,
         double? duration, Guid userId, string userName)
     {
+        CancelTrackEnd();
         CurrentTrackId = trackId;
         CurrentTrackTitle = title;
         CurrentArtistName = artistName;
@@ -108,6 +137,7 @@ public class AuditoriumRoomState
 
     public void StopPlayback()
     {
+        CancelTrackEnd();
         CurrentTrackId = null;
         CurrentTrackTitle = null;
         CurrentArtistName = null;
@@ -124,6 +154,7 @@ public class AuditoriumRoomState
     {
         if (CurrentTrackId != null && !IsPaused)
         {
+            CancelTrackEnd();
             PausedAtSeconds = GetCurrentPositionSeconds();
             IsPaused = true;
         }

@@ -26,6 +26,35 @@ public class SonaFlyDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
     public DbSet<Auditorium> Auditoriums => Set<Auditorium>();
     public DbSet<AuditoriumQueueItem> AuditoriumQueueItems => Set<AuditoriumQueueItem>();
 
+    /// <summary>
+    /// The absolute path of the SQLite database file, when this context is backed by one.
+    /// Used to keep destructive cache cleanup from deleting the database (backlog N16).
+    /// Returns null for in-memory or non-SQLite providers.
+    /// </summary>
+    public static string? TryGetDatabaseFilePath(SonaFlyDbContext context)
+    {
+        try
+        {
+            var connectionString = context.Database.GetConnectionString();
+            if (string.IsNullOrWhiteSpace(connectionString)) return null;
+
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString);
+            var dataSource = builder.DataSource;
+
+            if (string.IsNullOrWhiteSpace(dataSource) ||
+                dataSource.Equals(":memory:", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return Path.GetFullPath(dataSource);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -124,6 +153,8 @@ public class SonaFlyDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
         builder.Entity<RefreshToken>(e =>
         {
             e.HasIndex(x => x.TokenHash);
+            // Revoking a replayed token's whole chain queries by family.
+            e.HasIndex(x => x.FamilyId);
             e.Property(x => x.TokenHash).HasMaxLength(256);
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });

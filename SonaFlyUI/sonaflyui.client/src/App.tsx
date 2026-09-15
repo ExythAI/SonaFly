@@ -1,53 +1,67 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import theme from './theme/theme';
+import { PageLoading, QueryError } from './components/PageParts';
+import { FeedbackProvider, notify, errorMessage } from './components/Feedback';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import Layout from './components/Layout';
+import { AuditoriumProvider } from './components/AuditoriumContext';
 import { PlayerProvider } from './components/PlayerContext';
 import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import LibraryRootsPage from './pages/LibraryRootsPage';
-import UsersPage from './pages/UsersPage';
-import { ArtistsPage, AlbumsPage, TracksPage } from './pages/BrowsePages';
-import AlbumDetailPage from './pages/AlbumDetailPage';
-import ArtistDetailPage from './pages/ArtistDetailPage';
-import SearchPage from './pages/SearchPage';
-import PlaylistsPage from './pages/PlaylistsPage';
-import MixedTapePage from './pages/MixedTapePage';
-import SystemPage from './pages/SystemPage';
-import RestrictionsPage from './pages/RestrictionsPage';
-import AuditoriumsPage from './pages/AuditoriumsPage';
+import ChangePasswordPage from './pages/ChangePasswordPage';
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const LibraryRootsPage = lazy(() => import('./pages/LibraryRootsPage'));
+const UsersPage = lazy(() => import('./pages/UsersPage'));
+const ArtistsPage = lazy(() => import('./pages/BrowsePages').then(m => ({ default: m.ArtistsPage })));
+const AlbumsPage = lazy(() => import('./pages/BrowsePages').then(m => ({ default: m.AlbumsPage })));
+const TracksPage = lazy(() => import('./pages/BrowsePages').then(m => ({ default: m.TracksPage })));
+const AlbumDetailPage = lazy(() => import('./pages/AlbumDetailPage'));
+const ArtistDetailPage = lazy(() => import('./pages/ArtistDetailPage'));
+const SearchPage = lazy(() => import('./pages/SearchPage'));
+const PlaylistsPage = lazy(() => import('./pages/PlaylistsPage'));
+const MixedTapePage = lazy(() => import('./pages/MixedTapePage'));
+const SystemPage = lazy(() => import('./pages/SystemPage'));
+const RestrictionsPage = lazy(() => import('./pages/RestrictionsPage'));
+const AuditoriumsPage = lazy(() => import('./pages/AuditoriumsPage'));
 
 const queryClient = new QueryClient({
+    mutationCache: new MutationCache({
+        onError: error => { notify(errorMessage(error), 'error'); },
+        onSuccess: (_data, _variables, _result, mutation) => { notify(String(mutation.meta?.successMessage ?? 'Changes saved.')); },
+    }),
     defaultOptions: {
         queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30000 },
     },
 });
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { isAuthenticated, loading } = useAuth();
-    if (loading) return null;
-    return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+    const { isAuthenticated, mustChangePassword, loading, sessionError, retrySession } = useAuth();
+    if (loading) return <PageLoading />;
+    if (sessionError) return <QueryError error={new Error(sessionError)} retry={retrySession} />;
+    if (!isAuthenticated) return <Navigate to="/login" />;
+    // The server refuses every other endpoint until the temporary password is replaced,
+    // so there is nothing useful to render behind this.
+    if (mustChangePassword) return <ChangePasswordPage />;
+    return <>{children}</>;
 };
 
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { isAdmin, loading } = useAuth();
-    if (loading) return null;
+    if (loading) return <PageLoading />;
     return isAdmin ? <>{children}</> : <Navigate to="/" />;
 };
 
 const App: React.FC = () => (
-    <QueryClientProvider client={queryClient}>
-        <ThemeProvider theme={theme}>
+    <ThemeProvider theme={theme}><FeedbackProvider><QueryClientProvider client={queryClient}>
             <CssBaseline />
             <AuthProvider>
-                <PlayerProvider>
+                <PlayerProvider><AuditoriumProvider>
                 <BrowserRouter>
                     <Routes>
                         <Route path="/login" element={<LoginPage />} />
-                        <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+                        <Route path="/" element={<PrivateRoute><Suspense fallback={<PageLoading />}><Layout /></Suspense></PrivateRoute>}>
                             <Route index element={<DashboardPage />} />
                             <Route path="library-roots" element={<AdminRoute><LibraryRootsPage /></AdminRoute>} />
                             <Route path="users" element={<AdminRoute><UsersPage /></AdminRoute>} />
@@ -61,14 +75,13 @@ const App: React.FC = () => (
                             <Route path="mixed-tapes" element={<MixedTapePage />} />
                             <Route path="system" element={<SystemPage />} />
                             <Route path="restrictions" element={<AdminRoute><RestrictionsPage /></AdminRoute>} />
-                            <Route path="auditoriums" element={<AdminRoute><AuditoriumsPage /></AdminRoute>} />
+                            <Route path="auditoriums" element={<AuditoriumsPage />} />
                         </Route>
                     </Routes>
                 </BrowserRouter>
-                </PlayerProvider>
+                </AuditoriumProvider></PlayerProvider>
             </AuthProvider>
-        </ThemeProvider>
-    </QueryClientProvider>
+    </QueryClientProvider></FeedbackProvider></ThemeProvider>
 );
 
 export default App;

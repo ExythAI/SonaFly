@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SonaFlyUI.Server.Application.Common;
 using SonaFlyUI.Server.Application.DTOs;
 using SonaFlyUI.Server.Application.Interfaces;
 using SonaFlyUI.Server.Domain.Entities;
@@ -20,6 +21,10 @@ public class LibraryIndexService : ILibraryIndexService
     private Dictionary<string, Album> _albumCache = null!;
     private Dictionary<string, Genre> _genreCache = null!;
 
+    // Albums whose artwork this scan has already resolved (or tried to resolve), so that a
+    // 30-track album does not trigger 30 identical folder scans and remote lookups (N22).
+    private HashSet<Guid> _albumArtworkResolved = null!;
+
     public LibraryIndexService(
         SonaFlyDbContext db,
         IFileScanner fileScanner,
@@ -34,63 +39,79 @@ public class LibraryIndexService : ILibraryIndexService
         _logger = logger;
     }
 
-    public async Task<ScanJobDto> ScanLibraryRootAsync(Guid libraryRootId, bool fullScan, CancellationToken ct)
+    public async Task<ScanJobDto> ScanLibraryRootAsync(ScanRequest request, CancellationToken ct)
     {
+        var libraryRootId = request.LibraryRootId;
+        var fullScan = request.FullScan;
+
         var libraryRoot = await _db.LibraryRoots.FindAsync([libraryRootId], ct)
             ?? throw new KeyNotFoundException($"Library root {libraryRootId} not found.");
 
-        var scanJob = new ScanJob
+        // Adopt the job the API persisted when it accepted the request, so scan history shows
+        // one row per requested scan rather than a queued row plus an unrelated running one.
+        var scanJob = await _db.ScanJobs.FirstOrDefaultAsync(j => j.Id == request.ScanJobId, ct);
+        if (scanJob == null)
         {
-            LibraryRootId = libraryRootId,
-            Status = ScanStatus.Running,
-            StartedUtc = DateTime.UtcNow
-        };
-        _db.ScanJobs.Add(scanJob);
+            scanJob = new ScanJob { Id = request.ScanJobId, LibraryRootId = libraryRootId };
+            _db.ScanJobs.Add(scanJob);
+        }
+
+        scanJob.Status = ScanStatus.Running;
+        scanJob.StartedUtc = DateTime.UtcNow;
 
         libraryRoot.LastScanStartedUtc = DateTime.UtcNow;
         libraryRoot.LastScanStatus = ScanStatus.Running;
         libraryRoot.LastScanError = null;
         await _db.SaveChangesAsync(ct);
 
-        // Pre-load existing entities into scan-session caches
-        _artistCache = (await _db.Artists.ToListAsync(ct))
-            .ToDictionary(a => a.Name.ToLowerInvariant(), a => a);
-        _albumCache = (await _db.Albums.Include(a => a.AlbumArtist).ToListAsync(ct))
-            .ToDictionary(a => AlbumKey(a.Title, a.AlbumArtistId), a => a);
-        _genreCache = (await _db.Genres.ToListAsync(ct))
-            .ToDictionary(g => g.Name.ToLowerInvariant(), g => g);
-
         var errors = new List<string>();
+        var traversal = new ScanTraversalReport();
 
         try
         {
+            // Pre-load existing entities into scan-session caches. This sits inside the try so a
+            // failure here is recorded on the job and the root, rather than escaping and leaving
+            // the root stuck at Running forever (backlog N17).
+            _artistCache = (await _db.Artists.ToListAsync(ct))
+                .ToDictionary(a => a.Name.ToLowerInvariant(), a => a);
+            _albumCache = (await _db.Albums.Include(a => a.AlbumArtist).ToListAsync(ct))
+                .ToDictionary(a => AlbumKey(a.Title, a.AlbumArtistId), a => a);
+            _genreCache = (await _db.Genres.ToListAsync(ct))
+                .ToDictionary(g => g.Name.ToLowerInvariant(), g => g);
+            _albumArtworkResolved = [];
+
             // Get existing tracks for this library root for comparison
-            var existingTracks = await _db.Tracks
-                .Where(t => t.LibraryRootId == libraryRootId)
-                .ToDictionaryAsync(t => t.FilePath, ct);
+            var existingTracks = (await _db.Tracks
+                    .Where(t => t.LibraryRootId == libraryRootId)
+                    .ToListAsync(ct))
+                .GroupBy(t => FileSystemPaths.NormalizeForComparison(t.FilePath), FileSystemPaths.Comparer)
+                .ToDictionary(g => g.Key, g => g.First(), FileSystemPaths.Comparer);
 
-            var scannedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var scannedPaths = new HashSet<string>(FileSystemPaths.Comparer);
 
-            await foreach (var file in _fileScanner.EnumerateAudioFilesAsync(libraryRoot.Path, ct))
+            await foreach (var file in _fileScanner.EnumerateAudioFilesAsync(libraryRoot.Path, traversal, ct))
             {
                 scanJob.FilesScanned++;
-                scannedPaths.Add(file.FilePath);
+                var normalizedPath = FileSystemPaths.NormalizeForComparison(file.FilePath);
+                scannedPaths.Add(normalizedPath);
 
                 try
                 {
-                    if (existingTracks.TryGetValue(file.FilePath, out var existing))
+                    if (existingTracks.TryGetValue(normalizedPath, out var existing))
                     {
-                        // Incremental: skip if not changed (unless full scan)
+                        // Incremental: skip only if the file is unchanged AND the index already
+                        // agrees that it is present. A file that comes back byte-identical after
+                        // being marked missing would otherwise stay hidden forever (N14).
                         if (!fullScan &&
+                            !existing.IsMissing &&
                             existing.FileSizeBytes == file.FileSizeBytes &&
                             existing.ModifiedUtcSource == file.LastModifiedUtc)
                         {
                             continue;
                         }
 
-                        // File changed — re-read metadata
                         var metadata = await _metadataReader.ReadAsync(file.FilePath, ct);
-                        UpdateTrack(existing, metadata, file);
+                        await UpdateTrackAsync(existing, metadata, file, ct);
                         scanJob.FilesUpdated++;
                     }
                     else
@@ -109,6 +130,10 @@ public class LibraryIndexService : ILibraryIndexService
                             scanJob.FilesScanned, scanJob.FilesAdded);
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     scanJob.ErrorsCount++;
@@ -117,18 +142,47 @@ public class LibraryIndexService : ILibraryIndexService
                 }
             }
 
-            // Mark missing files
+            // Reconcile absence, but only where this scan actually looked. An offline root or a
+            // denied subtree is not evidence that its files were deleted (N13).
             foreach (var (path, track) in existingTracks)
             {
-                if (!scannedPaths.Contains(path) && !track.IsMissing)
+                if (scannedPaths.Contains(path) || track.IsMissing)
+                    continue;
+
+                if (!traversal.CanVouchForAbsenceOf(track.FilePath))
                 {
-                    track.IsMissing = true;
-                    track.ModifiedUtc = DateTime.UtcNow;
-                    scanJob.FilesMissing++;
+                    scanJob.FilesUnverified++;
+                    continue;
                 }
+
+                track.IsMissing = true;
+                track.ModifiedUtc = DateTime.UtcNow;
+                scanJob.FilesMissing++;
             }
 
-            scanJob.Status = ScanStatus.Completed;
+            if (!traversal.RootAvailable)
+            {
+                // The root itself was unreachable. That is a failed scan, not an empty library.
+                scanJob.Status = ScanStatus.Failed;
+                errors.Insert(0,
+                    $"Library root '{libraryRoot.Path}' could not be reached. No tracks were marked " +
+                    $"missing and no metadata was removed; {scanJob.FilesUnverified} indexed track(s) " +
+                    "were left as they were.");
+                errors.AddRange(traversal.Failures.Select(f => $"Unreadable: {f}"));
+            }
+            else if (traversal.FailureCount > 0)
+            {
+                scanJob.Status = ScanStatus.Partial;
+                errors.Insert(0,
+                    $"Partial scan: {traversal.FailureCount} path(s) could not be read; " +
+                    $"{scanJob.FilesUnverified} existing track(s) were left untouched because their " +
+                    "location could not be verified.");
+                errors.AddRange(traversal.Failures.Select(f => $"Unreadable: {f}"));
+            }
+            else
+            {
+                scanJob.Status = ScanStatus.Completed;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -149,22 +203,38 @@ public class LibraryIndexService : ILibraryIndexService
         libraryRoot.LastScanStatus = scanJob.Status;
         libraryRoot.LastScanError = scanJob.ErrorSummary;
 
-        await _db.SaveChangesAsync(ct);
+        // The scan may have been cancelled; its final state still has to be persisted, so this
+        // save must not use the (possibly already-cancelled) scan token.
+        await _db.SaveChangesAsync(CancellationToken.None);
 
-        // Clean up orphaned entities (artists, albums, genres with no indexed tracks)
+        // Only a scan that saw the whole tree may garbage-collect metadata.
         if (scanJob.Status == ScanStatus.Completed)
         {
             await CleanupOrphansAsync(ct);
+        }
+        else if (scanJob.Status == ScanStatus.Partial)
+        {
+            _logger.LogWarning(
+                "Skipping orphan cleanup for library root {LibraryRootId}: {Failures} path(s) were unreadable.",
+                libraryRootId, traversal.FailureCount);
         }
 
         return MapScanJob(scanJob, libraryRoot.Name);
     }
 
+    /// <summary>
+    /// Removes metadata entities that no longer have any track at all.
+    /// <para>
+    /// Deliberately keyed on the existence of a track row rather than a <em>present</em> track
+    /// row: a track that is merely missing (an unplugged drive, a file temporarily moved) must
+    /// keep its album and artist identity so that playlist membership, mixed tapes and
+    /// ID-based content restrictions still point at the same entities when it returns (N13).
+    /// </para>
+    /// </summary>
     private async Task CleanupOrphansAsync(CancellationToken ct)
     {
-        // Remove albums with no indexed (non-missing) tracks
         var orphanAlbums = await _db.Albums
-            .Where(a => !_db.Tracks.Any(t => t.AlbumId == a.Id && t.IsIndexed && !t.IsMissing))
+            .Where(a => !_db.Tracks.Any(t => t.AlbumId == a.Id))
             .ToListAsync(ct);
         if (orphanAlbums.Count > 0)
         {
@@ -173,10 +243,10 @@ public class LibraryIndexService : ILibraryIndexService
             await _db.SaveChangesAsync(ct);
         }
 
-        // Remove artists with no indexed tracks (neither as primary artist nor as album artist)
         var orphanArtists = await _db.Artists
             .Where(a =>
-                !_db.Tracks.Any(t => t.PrimaryArtistId == a.Id && t.IsIndexed && !t.IsMissing) &&
+                !_db.Tracks.Any(t => t.PrimaryArtistId == a.Id) &&
+                !_db.TrackArtists.Any(ta => ta.ArtistId == a.Id) &&
                 !_db.Albums.Any(alb => alb.AlbumArtistId == a.Id))
             .ToListAsync(ct);
         if (orphanArtists.Count > 0)
@@ -186,7 +256,6 @@ public class LibraryIndexService : ILibraryIndexService
             await _db.SaveChangesAsync(ct);
         }
 
-        // Remove genres with no track-genre links
         var orphanGenres = await _db.Genres
             .Where(g => !_db.TrackGenres.Any(tg => tg.GenreId == g.Id))
             .ToListAsync(ct);
@@ -206,19 +275,6 @@ public class LibraryIndexService : ILibraryIndexService
             : artist;
         var album = GetOrCreateAlbum(metadata.Album, albumArtist?.Id, metadata.Year);
         var genre = GetOrCreateGenre(metadata.Genre);
-
-        // Extract artwork
-        Guid? artworkId = null;
-        var artworkResult = await _artworkService.ExtractAndStoreAsync(metadata, file.FilePath, ct);
-        if (artworkResult != null)
-        {
-            artworkId = artworkResult.ArtworkId;
-            // Assign to album if album doesn't have artwork yet
-            if (album != null && album.ArtworkId == null)
-            {
-                album.ArtworkId = artworkId;
-            }
-        }
 
         var track = new Track
         {
@@ -255,17 +311,36 @@ public class LibraryIndexService : ILibraryIndexService
         {
             _db.TrackArtists.Add(new TrackArtist { TrackId = track.Id, ArtistId = artist.Id, Role = TrackArtistRole.Primary });
         }
+
+        await ResolveArtworkAsync(album, metadata, file.FilePath, forceRefresh: false, ct);
     }
 
-    private void UpdateTrack(Track track, AudioMetadata metadata, DiscoveredAudioFile file)
+    private async Task UpdateTrackAsync(Track track, AudioMetadata metadata, DiscoveredAudioFile file, CancellationToken ct)
     {
+        // File-level facts are always true, even when the tags could not be parsed.
+        track.FileSizeBytes = file.FileSizeBytes;
+        track.ModifiedUtcSource = file.LastModifiedUtc;
+        track.ModifiedUtc = DateTime.UtcNow;
+        track.IsMissing = false;
+        track.IsIndexed = true;
+
+        if (metadata.ReadFailed)
+        {
+            // The placeholder metadata says nothing about this file's tags. Overwriting the
+            // last-known-good title/artist/genre — and dropping the junctions restrictions are
+            // enforced through — would be a regression, not an update (N15).
+            _logger.LogWarning(
+                "Keeping last-known-good metadata for {FilePath}: tags could not be parsed.", file.FilePath);
+            return;
+        }
+
         var artist = GetOrCreateArtist(metadata.Artist ?? metadata.AlbumArtist);
         var albumArtist = metadata.AlbumArtist != null && metadata.AlbumArtist != metadata.Artist
             ? GetOrCreateArtist(metadata.AlbumArtist)
             : artist;
         var album = GetOrCreateAlbum(metadata.Album, albumArtist?.Id, metadata.Year);
+        var genre = GetOrCreateGenre(metadata.Genre);
 
-        track.FileSizeBytes = file.FileSizeBytes;
         track.DurationSeconds = metadata.DurationSeconds;
         track.BitRateKbps = metadata.BitRateKbps;
         track.SampleRateHz = metadata.SampleRateHz;
@@ -276,9 +351,116 @@ public class LibraryIndexService : ILibraryIndexService
         track.PrimaryArtistId = artist?.Id;
         track.Genre = metadata.Genre;
         track.MimeType = metadata.MimeType;
-        track.ModifiedUtcSource = file.LastModifiedUtc;
-        track.ModifiedUtc = DateTime.UtcNow;
-        track.IsMissing = false;
+
+        // Scalar metadata and junctions have to move together: content restrictions are
+        // evaluated through TrackGenres/TrackArtists, so a track retagged into a blocked genre
+        // stays streamable if only Track.Genre is updated (N15).
+        await SyncGenreJunctionAsync(track, genre, ct);
+        await SyncPrimaryArtistJunctionAsync(track, artist, ct);
+
+        // A changed file may carry changed embedded artwork.
+        await ResolveArtworkAsync(album, metadata, file.FilePath, forceRefresh: true, ct);
+    }
+
+    private async Task SyncGenreJunctionAsync(Track track, Genre? genre, CancellationToken ct)
+    {
+        var current = await LoadJunctionsAsync(_db.TrackGenres, track.Id, ct);
+
+        var keep = current.FirstOrDefault(l => genre != null && l.GenreId == genre.Id);
+
+        foreach (var link in current)
+        {
+            if (!ReferenceEquals(link, keep))
+                _db.TrackGenres.Remove(link);
+        }
+
+        if (genre != null && keep == null)
+        {
+            _db.TrackGenres.Add(new TrackGenre { TrackId = track.Id, GenreId = genre.Id });
+        }
+    }
+
+    private async Task SyncPrimaryArtistJunctionAsync(Track track, Artist? artist, CancellationToken ct)
+    {
+        var current = (await LoadJunctionsAsync(_db.TrackArtists, track.Id, ct))
+            .Where(ta => ta.Role == TrackArtistRole.Primary)
+            .ToList();
+
+        var keep = current.FirstOrDefault(l => artist != null && l.ArtistId == artist.Id);
+
+        foreach (var link in current)
+        {
+            if (!ReferenceEquals(link, keep))
+                _db.TrackArtists.Remove(link);
+        }
+
+        if (artist != null && keep == null)
+        {
+            _db.TrackArtists.Add(new TrackArtist { TrackId = track.Id, ArtistId = artist.Id, Role = TrackArtistRole.Primary });
+        }
+    }
+
+    /// <summary>
+    /// Reads the junction rows for one track: those already persisted plus any this batch has
+    /// added but not yet saved, so the two sources cannot fight each other mid-scan.
+    /// </summary>
+    private async Task<List<TrackGenre>> LoadJunctionsAsync(DbSet<TrackGenre> set, Guid trackId, CancellationToken ct)
+    {
+        var rows = await set.Where(tg => tg.TrackId == trackId).ToListAsync(ct);
+
+        foreach (var entry in _db.ChangeTracker.Entries<TrackGenre>())
+        {
+            if (entry.State == EntityState.Added && entry.Entity.TrackId == trackId && !rows.Contains(entry.Entity))
+                rows.Add(entry.Entity);
+        }
+
+        return rows;
+    }
+
+    private async Task<List<TrackArtist>> LoadJunctionsAsync(DbSet<TrackArtist> set, Guid trackId, CancellationToken ct)
+    {
+        var rows = await set.Where(ta => ta.TrackId == trackId).ToListAsync(ct);
+
+        foreach (var entry in _db.ChangeTracker.Entries<TrackArtist>())
+        {
+            if (entry.State == EntityState.Added && entry.Entity.TrackId == trackId && !rows.Contains(entry.Entity))
+                rows.Add(entry.Entity);
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Resolves artwork for a track's album at most once per scan. Embedded art is cheap, but
+    /// the folder-image and MusicBrainz fallbacks are not, and running them per track means one
+    /// album can issue dozens of identical remote lookups (N22).
+    /// </summary>
+    private async Task ResolveArtworkAsync(Album? album, AudioMetadata metadata, string filePath, bool forceRefresh, CancellationToken ct)
+    {
+        var hasEmbeddedArt = metadata.ArtworkData is { Length: > 0 };
+
+        if (album != null && !forceRefresh && album.ArtworkId != null)
+        {
+            // Album is already illustrated; nothing to look up for this track.
+            _albumArtworkResolved.Add(album.Id);
+            return;
+        }
+
+        if (album != null && !_albumArtworkResolved.Add(album.Id) && !hasEmbeddedArt)
+        {
+            // Already attempted for this album during this scan, and this track brings no new
+            // embedded image of its own — do not repeat the expensive fallbacks.
+            return;
+        }
+
+        var artworkResult = await _artworkService.ExtractAndStoreAsync(metadata, filePath, ct);
+        if (artworkResult == null || album == null) return;
+
+        // Embedded art from the track itself wins on a refresh; otherwise only fill a gap.
+        if (album.ArtworkId == null || (forceRefresh && hasEmbeddedArt))
+        {
+            album.ArtworkId = artworkResult.ArtworkId;
+        }
     }
 
     private Artist? GetOrCreateArtist(string? name)
@@ -330,6 +512,6 @@ public class LibraryIndexService : ILibraryIndexService
         job.Id, job.LibraryRootId, libraryRootName,
         job.Status.ToString(), job.StartedUtc, job.CompletedUtc,
         job.FilesScanned, job.FilesAdded, job.FilesUpdated,
-        job.FilesMissing, job.ErrorsCount, job.ErrorSummary
+        job.FilesMissing, job.FilesUnverified, job.ErrorsCount, job.ErrorSummary
     );
 }

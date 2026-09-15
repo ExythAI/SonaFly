@@ -1,4 +1,5 @@
 using CommunityToolkit.Maui;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SonaFly.Services;
 using SonaFly.ViewModels;
@@ -23,7 +24,15 @@ namespace SonaFly
 
             // Services
             builder.Services.AddSingleton<ServerStorageService>();
-            builder.Services.AddSingleton<HttpClient>();
+            builder.Services.AddSingleton(_ => new HttpClient(new HttpClientHandler
+            {
+                // The API never legitimately redirects. Following one silently is what
+                // turned a plain-HTTP server URL into an unreadable error: a 301 to https
+                // rewrites POST as GET, so the sign-in request arrived as a GET and the
+                // reply was a web page. Surfacing the redirect instead lets the app say
+                // something true about it.
+                AllowAutoRedirect = false,
+            }));
             builder.Services.AddSingleton<SonaFlyApiClient>();
             builder.Services.AddSingleton<AudioPlayerService>();
             builder.Services.AddSingleton<PlaylistPickerService>();
@@ -53,7 +62,15 @@ namespace SonaFly
             builder.Logging.AddDebug();
 #endif
 
-            return builder.Build();
+            var app = builder.Build();
+
+            // Tokens live in the platform keychain, which is async to read. Load them
+            // before App.CreateWindow decides which page to open. Task.Run keeps this off
+            // the UI synchronization context so the blocking wait cannot deadlock.
+            Task.Run(() => app.Services.GetRequiredService<ServerStorageService>().LoadAsync())
+                .GetAwaiter().GetResult();
+
+            return app;
         }
     }
 }

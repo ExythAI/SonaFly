@@ -26,6 +26,7 @@ public record ScanJobDto(
     int FilesAdded,
     int FilesUpdated,
     int FilesMissing,
+    int FilesUnverified,
     int ErrorsCount,
     string? ErrorSummary
 );
@@ -54,6 +55,13 @@ public record AudioMetadata
     public string MimeType { get; init; } = string.Empty;
     public byte[]? ArtworkData { get; init; }
     public string? ArtworkMimeType { get; init; }
+
+    /// <summary>
+    /// True when the tags could not be parsed at all. The remaining properties are then a
+    /// filename-derived placeholder, not a statement that the file has no tags, so callers
+    /// must not overwrite last-known-good metadata with them (backlog N15).
+    /// </summary>
+    public bool ReadFailed { get; init; }
 }
 
 public record ArtworkResult(Guid ArtworkId, string StoragePath);

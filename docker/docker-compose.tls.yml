@@ -1,0 +1,84 @@
+# Recommended deployment: SonaFly behind Caddy, which terminates TLS and redirects
+# HTTP to HTTPS.
+#
+#   cp .env.example .env      # then set JWT_SECRET and SONAFLY_DOMAIN
+#   docker compose -f docker-compose.tls.yml up -d
+#
+# The application container is NOT published to the host here — only the proxy is — so
+# there is no plain-HTTP way in from outside the Docker network.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"     # ACME HTTP challenge, and the redirect to HTTPS
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    environment:
+      SONAFLY_DOMAIN: ${SONAFLY_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # issued certificates; losing this re-requests them
+      - caddy_config:/config
+    depends_on:
+      sonafly:
+        # Wait for the app's health check (which verifies the database) rather than
+        # merely for the container to start, so the proxy never serves a broken backend.
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  sonafly:
+    build:
+      context: ..
+      dockerfile: SonaFlyUI/SonaFlyUI.Server/Dockerfile
+    # No "ports:" on purpose — reachable only from the proxy, over the internal network.
+    expose:
+      - "8080"
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: ${DB_CONNECTION}
+      SonaFly__ArtworkRoot: ${ARTWORK_ROOT}
+      Jwt__Secret: ${JWT_SECRET}
+      # Leave ADMIN_DEFAULT_PASSWORD unset in .env to have a one-time admin password
+      # generated on first boot and printed once in this container's log.
+      SonaFly__AdminDefaultPassword: ${ADMIN_DEFAULT_PASSWORD:-}
+
+      # Tells the application it is reached over HTTPS: enables the HTTP-to-HTTPS
+      # redirect, HSTS, and the Secure flag on the refresh-token cookie.
+      SonaFly__Deployment__UseHttps: "true"
+
+      # X-Forwarded-* headers are honoured ONLY from this network. Without it an
+      # ordinary client could claim any address or scheme it liked. The value must
+      # match the subnet declared below.
+      SonaFly__Deployment__KnownNetworks__0: "172.28.0.0/16"
+    volumes:
+      - sonafly_db:/app/data/db
+      - sonafly_artwork:/app/data/artwork
+      # Data Protection key ring. Deleting this volume invalidates every outstanding
+      # stream URL; replicas must share it to validate each other's tickets.
+      - sonafly_keys:/app/data/keys
+      - sonafly_logs:/app/data/logs
+      - /mnt/music:/music/library-main:ro
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        # Fixed so KnownNetworks above can name it. Change both together if this
+        # subnet collides with something on your host.
+        - subnet: 172.28.0.0/16
+
+volumes:
+  sonafly_db:
+  sonafly_artwork:
+  sonafly_keys:
+  sonafly_logs:
+  caddy_data:
+  caddy_config:

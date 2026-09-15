@@ -1,3 +1,4 @@
+import { QueryError } from '../components/PageParts';
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -6,12 +7,13 @@ import {
 } from '@mui/material';
 import { DeleteForever, Warning } from '@mui/icons-material';
 import { systemApi } from '../api/client';
+import { errorMessage } from '../components/Feedback';
 import { useAuth } from '../auth/AuthContext';
 
 const SystemPage: React.FC = () => {
     const qc = useQueryClient();
     const { isAdmin } = useAuth();
-    const { data: status, isLoading } = useQuery({ queryKey: ['system-status'], queryFn: () => systemApi.status().then(r => r.data) });
+    const { data: status, isLoading, isError, error, refetch } = useQuery({ queryKey: ['system-status'], queryFn: () => systemApi.status().then(r => r.data) });
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [purgeResult, setPurgeResult] = useState<string | null>(null);
 
@@ -22,14 +24,18 @@ const SystemPage: React.FC = () => {
             setConfirmOpen(false);
             qc.invalidateQueries();
         },
-        onError: (err: any) => {
-            setPurgeResult(`Error: ${err.response?.data?.detail || err.message}`);
+        onError: (err) => {
+            setPurgeResult(`Error: ${errorMessage(err)}`);
             setConfirmOpen(false);
         }
     });
 
     if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
 
+    if (isError) return <QueryError error={error} retry={refetch} />;
+
+    // Totals are now reported as the caller sees them, and the deployment/scan rows are
+    // server administration rather than library content, so only admins are shown them.
     const rows = [
         ['Version', status?.version],
         ['Total Tracks', status?.totalTracks],
@@ -37,9 +43,11 @@ const SystemPage: React.FC = () => {
         ['Total Artists', status?.totalArtists],
         ['Total Genres', status?.totalGenres],
         ['Total Playlists', status?.totalPlaylists],
-        ['Library Roots', status?.libraryRootCount],
-        ['Current Scan', status?.currentScanStatus ?? 'Idle'],
-        ['Last Scan Completed', status?.lastScanCompletedUtc ? new Date(status.lastScanCompletedUtc).toLocaleString() : 'Never'],
+        ...(isAdmin ? [
+            ['Library Roots', status?.libraryRootCount],
+            ['Current Scan', status?.currentScanStatus ?? 'Idle'],
+            ['Last Scan Completed', status?.lastScanCompletedUtc ? new Date(status.lastScanCompletedUtc).toLocaleString() : 'Never'],
+        ] : []),
     ];
 
     return (
@@ -70,7 +78,7 @@ const SystemPage: React.FC = () => {
                             <Warning color="error" /> Maintenance
                         </Typography>
                         <Divider sx={{ mb: 2 }} />
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
                             <Box>
                                 <Typography variant="subtitle2">Purge Library Data</Typography>
                                 <Typography variant="body2" color="text.secondary">

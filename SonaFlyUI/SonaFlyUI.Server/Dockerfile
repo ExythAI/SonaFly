@@ -1,4 +1,9 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# Base images are pinned to a minor version rather than a floating major, so a rebuild
+# does not silently move to a new runtime. Review and bump these deliberately (and
+# rebuild) when a .NET patch release ships; see "Updating" in README.md.
+ARG DOTNET_VERSION=10.0
+
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
 WORKDIR /src
 
 # Install Node.js for React build
@@ -32,25 +37,41 @@ WORKDIR /src/SonaFlyUI/SonaFlyUI.Server
 RUN dotnet publish -c Release -o /app/publish --no-restore
 
 # Runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS runtime
 WORKDIR /app
 
-# Create data directories
-RUN mkdir -p /app/data/db /app/data/artwork /app/data/logs
+# curl is needed by HEALTHCHECK below. The previous Dockerfile installed it only in the
+# build stage, which is discarded, so the health probe could never run and the container
+# reported "unhealthy" forever. The slim aspnet image ships no HTTP client of its own.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/publish .
 
 # Copy React build output to wwwroot
 COPY --from=build /src/SonaFlyUI/sonaflyui.client/dist ./wwwroot
 
+# The container parses media supplied from mounted storage, so it does not run as root.
+# APP_UID is the non-root user the .NET base images provide. Only the data directories
+# are writable; the application directory stays owned by root and read-only to the app.
+RUN mkdir -p /app/data/db /app/data/artwork /app/data/logs /app/data/keys && \
+    chown -R $APP_UID:$APP_UID /app/data
+
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV ConnectionStrings__DefaultConnection="Data Source=/app/data/db/sonafly.db"
 ENV SonaFly__ArtworkRoot=/app/data/artwork
+# Signs stream tickets. Mount a persistent volume here, or every container replacement
+# invalidates the stream URLs clients are currently playing.
+ENV SonaFly__DataProtectionKeyRoot=/app/data/keys
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8080/api/health || exit 1
+USER $APP_UID
+
+# Fails once the database is unreachable, not merely when the process stops answering.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8080/api/health || exit 1
 
 ENTRYPOINT ["dotnet", "SonaFlyUI.Server.dll"]

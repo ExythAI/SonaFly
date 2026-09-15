@@ -14,7 +14,19 @@ public partial class AudioPlayerService : ObservableObject
     [ObservableProperty] private List<TrackDto> _queue = [];
     [ObservableProperty] private int _currentIndex;
 
-    public string? CurrentStreamUrl => CurrentTrack != null ? _api.StreamUrl(CurrentTrack.Id) : null;
+    public Task<string?> GetCurrentStreamUrlAsync() => CurrentTrack is { } track
+        ? GetStreamUrlAsync(track.Id) : Task.FromResult<string?>(null);
+
+    private async Task<string?> GetStreamUrlAsync(Guid trackId) => await _api.GetStreamUrlAsync(trackId);
+
+    // Changes signal that the player should request a fresh authorized URL.
+    public int StreamVersion { get; private set; }
+
+    private void NotifyStreamChanged()
+    {
+        StreamVersion++;
+        OnPropertyChanged(nameof(StreamVersion));
+    }
     public string? CurrentArtworkUrl => CurrentTrack?.ArtworkId != null ? _api.ArtworkUrl(CurrentTrack.ArtworkId) : null;
 
     public event Action<double>? SeekRequested;
@@ -43,7 +55,7 @@ public partial class AudioPlayerService : ObservableObject
 
         CurrentTrack = track;
         IsPlaying = true;
-        OnPropertyChanged(nameof(CurrentStreamUrl));
+        NotifyStreamChanged();
         OnPropertyChanged(nameof(CurrentArtworkUrl));
     }
 
@@ -55,7 +67,7 @@ public partial class AudioPlayerService : ObservableObject
         CurrentTrack = null;
         Position = 0;
         Duration = 0;
-        OnPropertyChanged(nameof(CurrentStreamUrl));
+        NotifyStreamChanged();
         OnPropertyChanged(nameof(CurrentArtworkUrl));
     }
 
@@ -65,7 +77,7 @@ public partial class AudioPlayerService : ObservableObject
         CurrentIndex = (CurrentIndex + 1) % Queue.Count;
         CurrentTrack = Queue[CurrentIndex];
         IsPlaying = true;
-        OnPropertyChanged(nameof(CurrentStreamUrl));
+        NotifyStreamChanged();
         OnPropertyChanged(nameof(CurrentArtworkUrl));
     }
 
@@ -75,7 +87,7 @@ public partial class AudioPlayerService : ObservableObject
         CurrentIndex = CurrentIndex > 0 ? CurrentIndex - 1 : Queue.Count - 1;
         CurrentTrack = Queue[CurrentIndex];
         IsPlaying = true;
-        OnPropertyChanged(nameof(CurrentStreamUrl));
+        NotifyStreamChanged();
         OnPropertyChanged(nameof(CurrentArtworkUrl));
     }
 

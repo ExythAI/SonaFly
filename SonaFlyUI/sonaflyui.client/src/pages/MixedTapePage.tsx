@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Box, Typography, Card, CardContent, Button, TextField, Dialog, DialogTitle,
     DialogContent, DialogActions, IconButton, CircularProgress, Grid, Chip,
-    LinearProgress, InputAdornment, Divider, CardActionArea, Tooltip
+    LinearProgress, InputAdornment, CardActionArea, Tooltip
 } from '@mui/material';
 import {
     Add, Delete, Close, Search, PlayArrow, Remove, Album as AlbumIcon, AccessTime
@@ -11,9 +11,8 @@ import {
 import { mixedTapesApi, browseApi, artworkUrl } from '../api/client';
 import { usePlayer } from '../components/PlayerContext';
 
-const MAX_DURATION = 3600; // 60 minutes in seconds
 
-const fmt = (s: number) => {
+const fmt = (s: number | null | undefined) => {
     if (!s || isNaN(s)) return '0:00';
     const m = Math.floor(s / 60);
     return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -69,7 +68,7 @@ const TapeListView: React.FC<{ onSelect: (id: string) => void; onCreate: () => v
             )}
 
             <Grid container spacing={2}>
-                {tapes?.map((tape: any) => {
+                {tapes?.map((tape) => {
                     const pct = Math.min(100, (tape.totalDurationSeconds / tape.targetDurationSeconds) * 100);
                     return (
                         <Grid key={tape.id} size={{ xs: 12, sm: 6, md: 4 }}>
@@ -181,7 +180,7 @@ const TrackBrowser: React.FC<{
             {browseMode === 'albums' && !selectedAlbum && (
                 <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
                     <Grid container spacing={1}>
-                        {albums?.items?.map((a: any) => (
+                        {albums?.items?.map((a) => (
                             <Grid key={a.id} size={{ xs: 4, sm: 4 }}>
                                 <Card sx={{
                                     bgcolor: 'rgba(255,255,255,0.03)', cursor: 'pointer',
@@ -218,7 +217,7 @@ const TrackBrowser: React.FC<{
                             <Typography variant="caption" color="text.secondary" noWrap>{albumDetail.artistName}</Typography>
                         </Box>
                     </Box>
-                    {albumDetail.tracks?.map((t: any) => {
+                    {albumDetail.tracks?.map((t) => {
                         const tooLong = (t.durationSeconds ?? 0) > remainingSeconds;
                         const alreadyAdded = existingTrackIds.has(t.id);
                         const disabled = tooLong || alreadyAdded;
@@ -254,7 +253,7 @@ const TrackBrowser: React.FC<{
             {/* Search results */}
             {browseMode === 'search' && search.length >= 2 && (
                 <Box sx={{ flex: 1, overflowY: 'auto' }}>
-                    {searchResults?.tracks?.length > 0 ? searchResults.tracks.map((t: any) => {
+                    {(searchResults?.tracks.length ?? 0) > 0 ? searchResults!.tracks.map(t => {
                         const tooLong = (t.durationSeconds ?? 0) > remainingSeconds;
                         const alreadyAdded = existingTrackIds.has(t.id);
                         const disabled = tooLong || alreadyAdded;
@@ -314,11 +313,11 @@ const TapeDetailView: React.FC<{ tapeId: string; onBack: () => void }> = ({ tape
 
     const pct = Math.min(100, (tape.totalDurationSeconds / tape.targetDurationSeconds) * 100);
     const remaining = Math.max(0, tape.targetDurationSeconds - tape.totalDurationSeconds);
-    const existingTrackIds = new Set<string>(tape.items?.map((i: any) => i.trackId) ?? []);
+    const existingTrackIds = new Set<string>(tape.items?.map((i) => i.trackId) ?? []);
 
     const handlePlayAll = () => {
         if (tape.items?.length > 0) {
-            const queue = tape.items.map((i: any) => ({
+            const queue = tape.items.map((i) => ({
                 id: i.trackId,
                 title: i.trackTitle,
                 artistName: i.artistName,
@@ -405,7 +404,7 @@ const TapeDetailView: React.FC<{ tapeId: string; onBack: () => void }> = ({ tape
                             </Box>
                         ) : (
                             <Box>
-                                {tape.items.map((item: any, i: number) => (
+                                {tape.items.map((item, i) => (
                                     <Box key={item.id} sx={{
                                         display: 'flex', alignItems: 'center', gap: 1, py: 1, px: 1.5,
                                         borderBottom: i < tape.items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',

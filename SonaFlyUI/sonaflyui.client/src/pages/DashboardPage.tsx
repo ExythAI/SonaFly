@@ -1,99 +1,67 @@
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Box, Typography, Grid, Card, CardContent, Chip, CircularProgress } from '@mui/material';
-import { Album, MusicNote, Person, QueueMusic, FolderOpen, Refresh } from '@mui/icons-material';
-import { systemApi, scansApi } from '../api/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import { Alert, Box, Button, Card, CardActionArea, CardContent, Chip, Grid, LinearProgress, Stack, Typography } from '@mui/material';
+import { ArrowForward, FolderOpen, Refresh, Album } from '@mui/icons-material';
+import { systemApi, scansApi, libraryRootsApi, browseApi, artworkUrl } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
+import { PageHeader, PageLoading, QueryError, EmptyState } from '../components/PageParts';
 
-const StatCard: React.FC<{ label: string; value: number | string; icon: React.ReactNode; color: string }> = ({ label, value, icon, color }) => (
-    <Card>
-        <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2.5 }}>
-            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: `${color}15` }}>{icon}</Box>
-            <Box>
-                <Typography variant="h5" fontWeight={700}>{value}</Typography>
-                <Typography variant="body2" color="text.secondary">{label}</Typography>
-            </Box>
-        </CardContent>
-    </Card>
-);
-
-const DashboardPage: React.FC = () => {
-    const { data: status, isLoading } = useQuery({ queryKey: ['system-status'], queryFn: () => systemApi.status().then(r => r.data) });
-    const { data: scans } = useQuery({ queryKey: ['recent-scans'], queryFn: () => scansApi.getAll().then(r => r.data) });
-
-    if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
-
-    const isFirstRun = status?.totalTracks === 0 && status?.libraryRootCount === 0;
-
-    return (
-        <Box>
-            <Typography variant="h4" gutterBottom>Dashboard</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>Overview of your music server</Typography>
-
-            {isFirstRun && (
-                <Card sx={{ mb: 3, border: '1px solid', borderColor: 'primary.main', bgcolor: 'rgba(124,77,255,0.08)' }}>
-                    <CardContent>
-                        <Typography variant="h6" gutterBottom sx={{ color: 'primary.main' }}>
-                            🎉 Welcome to SonaFly!
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            Your music server is ready. Follow these steps to get started:
-                        </Typography>
-                        <Box component="ol" sx={{ pl: 2, '& li': { mb: 1 } }}>
-                            <li><Typography variant="body2">Go to <strong>Library Roots</strong> and add the path(s) to your music folders (e.g., <code>/music/library-main</code>)</Typography></li>
-                            <li><Typography variant="body2">Click <strong>Scan</strong> on each library root to index your collection</Typography></li>
-                            <li><Typography variant="body2">Go to <strong>Users</strong> to create accounts for your listeners</Typography></li>
-                            <li><Typography variant="body2"><strong>Change the admin password</strong> — the default is <code>Admin123!</code></Typography></li>
-                        </Box>
-                    </CardContent>
-                </Card>
-            )}
-            <Grid container spacing={2.5} sx={{ mb: 4 }}>
-                <Grid size={{ xs: 6, md: 3 }}><StatCard label="Tracks" value={status?.totalTracks ?? 0} icon={<MusicNote sx={{ color: '#7C4DFF' }} />} color="#7C4DFF" /></Grid>
-                <Grid size={{ xs: 6, md: 3 }}><StatCard label="Albums" value={status?.totalAlbums ?? 0} icon={<Album sx={{ color: '#00E5FF' }} />} color="#00E5FF" /></Grid>
-                <Grid size={{ xs: 6, md: 3 }}><StatCard label="Artists" value={status?.totalArtists ?? 0} icon={<Person sx={{ color: '#00E676' }} />} color="#00E676" /></Grid>
-                <Grid size={{ xs: 6, md: 3 }}><StatCard label="Playlists" value={status?.totalPlaylists ?? 0} icon={<QueueMusic sx={{ color: '#FFD600' }} />} color="#FFD600" /></Grid>
-            </Grid>
-
-            <Grid container spacing={2.5}>
-                <Grid size={{ xs: 12, md: 6 }}>
-                    <Card>
-                        <CardContent>
-                            <Typography variant="h6" gutterBottom>Server Info</Typography>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" color="text.secondary">Version</Typography><Typography variant="body2">{status?.version}</Typography></Box>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" color="text.secondary">Library Roots</Typography><Typography variant="body2">{status?.libraryRootCount}</Typography></Box>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" color="text.secondary">Genres</Typography><Typography variant="body2">{status?.totalGenres}</Typography></Box>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <Typography variant="body2" color="text.secondary">Scan Status</Typography>
-                                    <Chip size="small" label={status?.currentScanStatus ?? 'Idle'} color={status?.currentScanStatus === 'Running' ? 'warning' : 'success'} sx={{ height: 22 }} />
-                                </Box>
-                            </Box>
-                        </CardContent>
-                    </Card>
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                    <Card>
-                        <CardContent>
-                            <Typography variant="h6" gutterBottom>Recent Scans</Typography>
-                            {Array.isArray(scans) && scans.length > 0 ? scans.slice(0, 5).map((scan: any) => (
-                                <Box key={scan.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Refresh fontSize="small" color="action" />
-                                        <Typography variant="body2">{scan.libraryRootName}</Typography>
-                                    </Box>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Typography variant="caption" color="text.secondary">{scan.filesScanned} files</Typography>
-                                        <Chip size="small" label={scan.status} sx={{ height: 20, fontSize: 11 }}
-                                            color={scan.status === 'Completed' ? 'success' : scan.status === 'Failed' ? 'error' : 'default'} />
-                                    </Box>
-                                </Box>
-                            )) : <Typography variant="body2" color="text.secondary">No scans yet</Typography>}
-                        </CardContent>
-                    </Card>
-                </Grid>
-            </Grid>
-        </Box>
-    );
-};
-
-export default DashboardPage;
+type Scan = { id: string; libraryRootName: string; status: string; filesScanned: number; filesAdded: number; errorsCount: number; errorSummary?: string; completedUtc?: string };
+type AlbumItem = { id: string; title: string; artistName?: string; artworkId?: string };
+export default function DashboardPage() {
+    const { isAdmin, user } = useAuth();
+    const qc = useQueryClient();
+    const statusQuery = useQuery({ queryKey: ['system-status'], queryFn: () => systemApi.status().then(r => r.data), refetchInterval: 5000 });
+    const scansQuery = useQuery({ queryKey: ['recent-scans'], queryFn: () => scansApi.getAll().then(r => r.data as Scan[]), enabled: isAdmin, refetchInterval: 5000 });
+    const albumsQuery = useQuery({ queryKey: ['home-albums'], queryFn: () => browseApi.albums(1, 6).then(r => r.data.items as AlbumItem[]) });
+    const scan = useMutation({ mutationFn: async () => {
+        const roots = (await libraryRootsApi.getAll()).data as { id: string; isEnabled: boolean }[];
+        const enabled = roots.filter(r => r.isEnabled);
+        if (!enabled.length) throw new Error('Add and enable a music folder before starting a scan.');
+        for (const root of enabled) await libraryRootsApi.triggerScan(root.id);
+    }, meta: { successMessage: 'Library scans queued.' }, onSuccess: () => { qc.invalidateQueries({ queryKey: ['recent-scans'] }); qc.invalidateQueries({ queryKey: ['system-status'] }); } });
+    if (statusQuery.isLoading) return <PageLoading />;
+    if (statusQuery.isError) return <QueryError error={statusQuery.error} retry={statusQuery.refetch} />;
+    const status = statusQuery.data;
+    // isLoading is false on a background refetch, so data can still be absent here.
+    if (!status) return <PageLoading />;
+    const scans = scansQuery.data ?? [];
+    const active = scans.filter(s => ['Running', 'Queued'].includes(s.status));
+    const latest = scans[0];
+    const successful = scans.find(s => s.status === 'Completed');
+    const stats = [
+        { name: 'Tracks', value: status.totalTracks, path: '/tracks' },
+        { name: 'Albums', value: status.totalAlbums, path: '/albums' },
+        { name: 'Artists', value: status.totalArtists, path: '/artists' },
+        { name: 'Playlists', value: status.totalPlaylists, path: '/playlists' },
+    ];
+    return <Box>
+        <PageHeader title={`Welcome back${user?.displayName ? `, ${user.displayName}` : ''}`} subtitle="Your collection. Ready when you are."
+            action={isAdmin && <><Button component={Link} to="/library-roots" startIcon={<FolderOpen />} variant="outlined">Music folders</Button>
+                <Button startIcon={<Refresh />} variant="contained" disabled={scan.isPending || active.length > 0 || !status.libraryRootCount}
+                    onClick={() => scan.mutate()}>{scan.isPending ? 'Queuing…' : active.length ? 'Scanning…' : 'Scan library'}</Button></>} />
+        {status.totalTracks === 0 && <EmptyState title={isAdmin ? 'Bring your music in' : 'Your library is getting ready'}
+            description={isAdmin ? 'Add a music folder and scan it. Your albums and tracks will appear here.' : 'Ask your administrator to add music to the server.'}
+            action={isAdmin && <Button component={Link} to="/library-roots" variant="contained">Add a music folder</Button>} />}
+        <Grid container spacing={2} sx={{ my: 2 }}>{stats.map(stat => <Grid key={stat.name} size={{ xs: 6, md: 3 }}>
+            <Card><CardActionArea component={Link} to={stat.path}><CardContent>
+                <Stack direction="row" justifyContent="space-between" alignItems="center"><Typography variant="body2" color="text.secondary">{stat.name}</Typography><ArrowForward sx={{ fontSize: 16, color: 'text.secondary' }} /></Stack>
+                <Typography sx={{ fontSize: 32, letterSpacing: '-.04em', fontWeight: 700, mt: 1 }}>{Number(stat.value).toLocaleString()}</Typography>
+            </CardContent></CardActionArea></Card>
+        </Grid>)}</Grid>
+        {isAdmin && <Card sx={{ my: 3 }}><CardContent>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}><Typography variant="h6">Library activity</Typography><Chip size="small" label={scansQuery.isError ? 'Unavailable' : active.length ? 'Scanning' : latest?.status === 'Failed' ? 'Needs attention' : successful ? 'Idle' : 'No scans yet'} color={scansQuery.isError ? 'default' : active.length ? 'warning' : 'default'} /></Stack>
+            {scansQuery.isError ? <QueryError error={scansQuery.error} retry={scansQuery.refetch} /> : <>
+                {active.map(job => <Box key={job.id} mb={2}><Stack direction="row" justifyContent="space-between" mb={1}><Typography variant="body2">{job.libraryRootName}</Typography><Typography variant="body2" color="text.secondary">{job.status} · {job.filesScanned.toLocaleString()} files checked</Typography></Stack><LinearProgress aria-label={`Scanning ${job.libraryRootName}`} /></Box>)}
+                {latest?.status === 'Failed' && <Alert severity="error" sx={{ mb: 2 }} action={<Button component={Link} to="/library-roots" color="inherit">View folders</Button>}>{latest.libraryRootName}: {latest.errorSummary || 'The latest scan failed. Check the folder path and permissions.'}</Alert>}
+                <Typography variant="body2" color="text.secondary">{successful?.completedUtc ? `Last successful scan: ${new Date(successful.completedUtc).toLocaleString()} · ${successful.filesAdded} tracks added` : 'No successful scans yet.'}</Typography>
+            </>}
+        </CardContent></Card>}
+        <Stack direction="row" alignItems="center" justifyContent="space-between" my={3}><Typography variant="h6">From your library</Typography><Button component={Link} to="/albums" endIcon={<ArrowForward />}>All albums</Button></Stack>
+        {albumsQuery.isError ? <QueryError error={albumsQuery.error} retry={albumsQuery.refetch} /> : <Grid container spacing={2}>{albumsQuery.data?.map(album => <Grid key={album.id} size={{ xs: 6, sm: 4, lg: 2 }}>
+            <Card><CardActionArea component={Link} to={`/albums/${album.id}`}><Box sx={{ aspectRatio: '1', bgcolor: 'rgba(124,77,255,.08)', display: 'grid', placeItems: 'center' }}>
+                {album.artworkId ? <Box component="img" alt="" src={artworkUrl(album.artworkId)} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Album sx={{ fontSize: 56, color: 'text.disabled' }} />}
+            </Box><CardContent sx={{ p: 1.5 }}><Typography noWrap variant="subtitle2">{album.title}</Typography><Typography noWrap variant="caption" color="text.secondary">{album.artistName || 'Various artists'}</Typography></CardContent></CardActionArea></Card>
+        </Grid>)}</Grid>}
+    </Box>;
+}

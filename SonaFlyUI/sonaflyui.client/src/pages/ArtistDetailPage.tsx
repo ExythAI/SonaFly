@@ -6,12 +6,13 @@ import {
 } from '@mui/material';
 import { PlayArrow, Pause, ArrowBack } from '@mui/icons-material';
 import { browseApi, artworkUrl } from '../api/client';
+import type { TrackListItemDto } from '../api/types.ts';
 import { usePlayer } from '../components/PlayerContext';
 
 const ArtistDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { play, pause, currentTrack, isPlaying } = usePlayer();
+    const { play, pause, resume, currentTrack, isPlaying, sharedRoom } = usePlayer();
 
     const { data: artist, isLoading: artistLoading } = useQuery({
         queryKey: ['artist', id],
@@ -29,14 +30,14 @@ const ArtistDetailPage: React.FC = () => {
         enabled: !!id,
     });
 
-    const fmt = (s?: number) => {
+    const fmt = (s?: number | null) => {
         if (!s) return '--';
         const m = Math.floor(s / 60);
         return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
     };
 
-    const handlePlayTrack = (t: any) => {
-        const allTracks = tracks?.items?.map((tr: any) => ({
+    const handlePlayTrack = (t: TrackListItemDto) => {
+        const allTracks = tracks?.items?.map((tr) => ({
             id: tr.id, title: tr.title, artistName: tr.artistName,
             albumTitle: tr.albumTitle, artworkId: tr.artworkId, durationSeconds: tr.durationSeconds,
         })) ?? [];
@@ -49,8 +50,8 @@ const ArtistDetailPage: React.FC = () => {
     if (artistLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
     if (!artist) return <Typography>Artist not found</Typography>;
 
-    const hasAlbums = albums?.items?.length > 0;
-    const hasTracks = tracks?.items?.length > 0;
+    const hasAlbums = (albums?.items.length ?? 0) > 0;
+    const hasTracks = (tracks?.items.length ?? 0) > 0;
 
     return (
         <Box>
@@ -77,10 +78,10 @@ const ArtistDetailPage: React.FC = () => {
             {hasAlbums && (
                 <Box sx={{ mb: 4 }}>
                     <Typography variant="h6" sx={{ mb: 2 }}>
-                        Albums <Chip size="small" label={albums.items.length} sx={{ ml: 1, height: 20 }} />
+                        Albums <Chip size="small" label={(albums?.items ?? []).length} sx={{ ml: 1, height: 20 }} />
                     </Typography>
                     <Grid container spacing={2}>
-                        {albums.items.map((a: any) => (
+                        {(albums?.items ?? []).map((a) => (
                             <Grid key={a.id} size={{ xs: 6, sm: 4, md: 3, lg: 2 }}>
                                 <Card><CardActionArea onClick={() => navigate(`/albums/${a.id}`)}>
                                     <Box sx={{ pt: '100%', position: 'relative', bgcolor: 'rgba(0,229,255,0.08)' }}>
@@ -102,7 +103,7 @@ const ArtistDetailPage: React.FC = () => {
             {hasTracks && (
                 <Box>
                     <Typography variant="h6" sx={{ mb: 2 }}>
-                        Tracks <Chip size="small" label={tracks.totalCount} sx={{ ml: 1, height: 20 }} />
+                        Tracks <Chip size="small" label={tracks?.totalCount ?? 0} sx={{ ml: 1, height: 20 }} />
                     </Typography>
                     <Card>
                         <Box sx={{ overflowX: 'auto' }}>
@@ -116,15 +117,15 @@ const ArtistDetailPage: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {tracks.items.map((t: any) => {
-                                        const isCurrent = currentTrack?.id === t.id;
+                                    {(tracks?.items ?? []).map((t) => {
+                                        const isCurrent = !sharedRoom && currentTrack?.id === t.id;
                                         return (
                                             <tr key={t.id} style={{
                                                 borderBottom: '1px solid rgba(255,255,255,0.04)',
                                                 background: isCurrent ? 'rgba(124,77,255,0.08)' : undefined,
                                             }}>
                                                 <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                                                    <IconButton size="small" onClick={() => isCurrent && isPlaying ? pause() : handlePlayTrack(t)}>
+                                                    <IconButton size="small" aria-label={isCurrent && isPlaying ? `Pause ${t.title}` : `Play ${t.title}`} onClick={() => isCurrent ? (isPlaying ? pause() : resume()) : handlePlayTrack(t)}>
                                                         {isCurrent && isPlaying ? (
                                                             <Pause fontSize="small" sx={{ color: '#B388FF' }} />
                                                         ) : (

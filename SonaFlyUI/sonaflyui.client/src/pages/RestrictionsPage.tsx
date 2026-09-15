@@ -8,24 +8,13 @@ import {
 } from '@mui/material';
 import { Delete, Add, Block as BlockIcon, Search } from '@mui/icons-material';
 import { usersApi, restrictionsApi, browseApi, artworkUrl } from '../api/client';
-
-interface Restriction {
-    id: string;
-    userId: string;
-    restrictionType: string;
-    targetId: string;
-    targetName: string | null;
-}
-
-interface User {
-    id: string;
-    userName: string;
-    displayName: string;
-}
+// These used to be re-declared here with looser types (restrictionType as a bare
+// string), which is how the `as any` casts crept in.
+import type { RestrictionType, UserInfoDto, UserRestrictionDto } from '../api/types.ts';
 
 const RestrictionsPage: React.FC = () => {
     const qc = useQueryClient();
-    const [selectedUser, setSelectedUser] = useState<User | null>(null);
+    const [selectedUser, setSelectedUser] = useState<UserInfoDto | null>(null);
     const [addOpen, setAddOpen] = useState(false);
     const [addType, setAddType] = useState<'Album' | 'Artist' | 'Genre'>('Album');
     const [filterText, setFilterText] = useState('');
@@ -79,34 +68,48 @@ const RestrictionsPage: React.FC = () => {
     });
 
     const isRestricted = (targetId: string) =>
-        restrictions?.some((r: Restriction) => r.targetId === targetId) ?? false;
+        restrictions?.some((r: UserRestrictionDto) => r.targetId === targetId) ?? false;
 
     const handleQuickRestrict = (targetId: string) => {
         if (!selectedUser) return;
         if (isRestricted(targetId)) {
-            const r = restrictions?.find((r: Restriction) => r.targetId === targetId);
+            const r = restrictions?.find((r: UserRestrictionDto) => r.targetId === targetId);
             if (r) removeMut.mutate(r.id);
         } else {
             addMut.mutate({ userId: selectedUser.id, type: addType, targetId });
         }
     };
 
-    const typeColor = (type: string) =>
-        type === 'Album' ? 'primary' : type === 'Artist' ? 'secondary' : 'warning';
+    const typeColor = (type: RestrictionType) =>
+        type === 'Album' ? 'primary' as const : type === 'Artist' ? 'secondary' as const : 'warning' as const;
 
-    // Get filtered items for the current type
-    const getItems = () => {
+    /**
+     * Albums, artists and genres are three different shapes. Normalising them here means
+     * the list below renders one thing, instead of picking fields off a union by checking
+     * addType at every use — which is unreadable and, being unnarrowable, untypeable.
+     */
+    type Candidate = { id: string; name: string; subtitle: string; avatar?: string };
+
+    const getItems = (): Candidate[] => {
         const term = filterText.toLowerCase();
+        const matches = (...fields: (string | null | undefined)[]) =>
+            !term || fields.some(f => (f ?? '').toLowerCase().includes(term));
+
         if (addType === 'Album') {
-            const items = albumsData?.items || [];
-            return term ? items.filter((a: any) => a.title.toLowerCase().includes(term) || (a.artistName || '').toLowerCase().includes(term)) : items;
-        } else if (addType === 'Artist') {
-            const items = artistsData?.items || [];
-            return term ? items.filter((a: any) => a.name.toLowerCase().includes(term)) : items;
-        } else {
-            const items = genresData || [];
-            return term ? items.filter((g: any) => g.name.toLowerCase().includes(term)) : items;
+            return (albumsData?.items ?? [])
+                .filter(a => matches(a.title, a.artistName))
+                .map(a => ({ id: a.id, name: a.title,
+                    subtitle: a.artistName || 'Unknown Artist', avatar: artworkUrl(a.artworkId) }));
         }
+        if (addType === 'Artist') {
+            return (artistsData?.items ?? [])
+                .filter(a => matches(a.name))
+                .map(a => ({ id: a.id, name: a.name,
+                    subtitle: `${a.albumCount} albums`, avatar: artworkUrl(a.artworkId) }));
+        }
+        return (genresData ?? [])
+            .filter(g => matches(g.name))
+            .map(g => ({ id: g.id, name: g.name, subtitle: `${g.trackCount} tracks` }));
     };
 
     const totalPages = addType === 'Album' ? Math.ceil((albumsData?.totalCount || 0) / pageSize) :
@@ -132,7 +135,7 @@ const RestrictionsPage: React.FC = () => {
             <Card sx={{ p: 3, mb: 3 }}>
                 <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Select User</Typography>
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    {users?.filter((u: User) => u.userName !== 'admin').map((u: User) => (
+                    {users?.filter((u: UserInfoDto) => u.userName !== 'admin').map((u: UserInfoDto) => (
                         <Chip
                             key={u.id}
                             label={u.displayName || u.userName}
@@ -153,7 +156,7 @@ const RestrictionsPage: React.FC = () => {
                             Restrictions for <strong>{selectedUser.displayName || selectedUser.userName}</strong>
                         </Typography>
                         <Button variant="contained" startIcon={<Add />} onClick={() => setAddOpen(true)} size="small">
-                            Add Restriction
+                            Add UserRestrictionDto
                         </Button>
                     </Box>
 
@@ -173,10 +176,10 @@ const RestrictionsPage: React.FC = () => {
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {restrictions?.map((r: Restriction) => (
+                                {restrictions?.map((r: UserRestrictionDto) => (
                                     <TableRow key={r.id}>
                                         <TableCell>
-                                            <Chip size="small" label={r.restrictionType} color={typeColor(r.restrictionType) as any} sx={{ height: 22 }} />
+                                            <Chip size="small" label={r.restrictionType} color={typeColor(r.restrictionType)} sx={{ height: 22 }} />
                                         </TableCell>
                                         <TableCell>
                                             <Typography fontWeight={500}>{r.targetName || r.targetId}</Typography>
@@ -194,7 +197,7 @@ const RestrictionsPage: React.FC = () => {
                 </Card>
             )}
 
-            {/* Add Restriction Dialog */}
+            {/* Add UserRestrictionDto Dialog */}
             <Dialog open={addOpen} onClose={() => setAddOpen(false)} maxWidth="sm" fullWidth>
                 <DialogTitle>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -205,7 +208,7 @@ const RestrictionsPage: React.FC = () => {
                     {/* Type selector */}
                     <TextField
                         label="Type" select value={addType} size="small"
-                        onChange={e => setAddType(e.target.value as any)}
+                        onChange={e => setAddType(e.target.value as RestrictionType)}
                     >
                         <MenuItem value="Album">Albums</MenuItem>
                         <MenuItem value="Artist">Artists</MenuItem>
@@ -224,15 +227,8 @@ const RestrictionsPage: React.FC = () => {
                         <Box sx={{ py: 4, textAlign: 'center' }}><CircularProgress size={24} /></Box>
                     ) : (
                         <List dense sx={{ maxHeight: 350, overflow: 'auto', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                            {getItems().map((item: any) => {
-                                const id = item.id;
+                            {getItems().map(({ id, name, subtitle, avatar }) => {
                                 const restricted = isRestricted(id);
-                                const name = addType === 'Album' ? item.title : item.name;
-                                const subtitle = addType === 'Album' ? (item.artistName || 'Unknown Artist') :
-                                                 addType === 'Artist' ? `${item.albumCount ?? 0} albums` :
-                                                 `${item.trackCount ?? 0} tracks`;
-                                const avatar = addType === 'Album' ? artworkUrl(item.artworkId) :
-                                               addType === 'Artist' ? artworkUrl(item.artworkId) : undefined;
 
                                 return (
                                     <ListItemButton

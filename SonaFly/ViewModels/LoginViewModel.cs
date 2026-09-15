@@ -44,12 +44,19 @@ public partial class LoginViewModel : ObservableObject
                 ?? throw new InvalidOperationException("No active server.");
 
             var result = await _api.LoginAsync(server.BaseUrl, Username, Password);
-            _storage.UpdateTokens(server.Id, result.AccessToken, result.RefreshToken, result.ExpiresUtc);
+            await _storage.UpdateTokensAsync(server.Id, result.AccessToken, result.RefreshToken, result.ExpiresUtc);
+            _storage.SetMustChangePassword(server.Id, result.User.MustChangePassword);
             server.Username = Username;
 
             Password = string.Empty;
             if (Application.Current is App app)
-                app.NavigateToShell();
+            {
+                // A newly created, reset or bootstrapped account holds a password somebody
+                // else chose. The server allows nothing but replacing it, so sending them
+                // into the shell would mean a library that answers 403 to everything.
+                if (result.User.MustChangePassword) app.NavigateToPasswordChange();
+                else app.NavigateToShell();
+            }
         }
         catch (Exception ex)
         {

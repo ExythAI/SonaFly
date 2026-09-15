@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SonaFlyUI.Server.Application.Common;
 using SonaFlyUI.Server.Application.DTOs;
 using SonaFlyUI.Server.Infrastructure.Data;
 using SonaFlyUI.Server.Infrastructure.Services;
@@ -26,6 +27,11 @@ public class TracksController : ControllerBase
         [FromQuery] string? filter = null, [FromQuery] Guid? artistId = null,
         CancellationToken ct = default)
     {
+        if (!Pagination.TryValidate(page, pageSize, out page, out pageSize, out var pagingError))
+            return BadRequest(new { message = pagingError });
+        if (!Pagination.TryValidateQueryText(filter, "filter", out var filterError))
+            return BadRequest(new { message = filterError });
+
         var query = _db.Tracks.AsNoTracking()
             .Where(t => t.IsIndexed && !t.IsMissing)
             .ApplyRestrictions(_db, CurrentUserId);
@@ -47,8 +53,12 @@ public class TracksController : ControllerBase
         var total = await query.CountAsync(ct);
 
         // Sort
+        // Every order ends with a unique tiebreaker. Titles, artists, durations and track
+        // numbers are all non-unique, and without one SQLite is free to return rows in a
+        // different order per page, so a row can repeat on one page and vanish from the
+        // next (backlog N20).
         var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
-        query = (sortBy?.ToLower()) switch
+        IOrderedQueryable<Domain.Entities.Track> ordered = (sortBy?.ToLower()) switch
         {
             "artist" => desc ? query.OrderByDescending(t => t.PrimaryArtist != null ? t.PrimaryArtist.Name : "")
                              : query.OrderBy(t => t.PrimaryArtist != null ? t.PrimaryArtist.Name : ""),
@@ -64,8 +74,9 @@ public class TracksController : ControllerBase
                       : query.OrderBy(t => t.Title),
         };
 
-        var items = await query
-            .Skip((page - 1) * pageSize)
+        var items = await ordered
+            .ThenBy(t => t.Id)
+            .Skip(Pagination.Offset(page, pageSize))
             .Take(pageSize)
             .Select(t => new TrackListItemDto(
                 t.Id, t.Title,

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using SonaFlyUI.Server.Application.DTOs;
 using SonaFlyUI.Server.Application.Interfaces;
@@ -12,6 +13,35 @@ public class MixedTapeService : IMixedTapeService
 
     public MixedTapeService(SonaFlyDbContext db) => _db = db;
 
+    // ── Access ──
+    //
+    // Mixed tapes have no public flag, so reading and writing coincide: the owner, or an
+    // administrator.
+
+    private static Expression<Func<MixedTape, bool>> AccessibleBy(CollectionCaller caller) =>
+        caller.IsAdmin
+            ? _ => true
+            : m => m.OwnerUserId == caller.UserId;
+
+    /// <summary>
+    /// Loads a mixed tape the caller may modify. Someone else's tape is reported as missing,
+    /// not forbidden, so guessing IDs confirms nothing.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such tape, or it belongs to another user.</exception>
+    private async Task<MixedTape> LoadForWriteAsync(Guid mixedTapeId, CollectionCaller caller, CancellationToken ct)
+    {
+        var tape = await _db.MixedTapes.FirstOrDefaultAsync(m => m.Id == mixedTapeId, ct);
+
+        if (tape == null || !(caller.IsAdmin || tape.OwnerUserId == caller.UserId))
+        {
+            throw new KeyNotFoundException($"Mixed tape {mixedTapeId} not found.");
+        }
+
+        return tape;
+    }
+
+    // ── Commands ──
+
     public async Task<Guid> CreateAsync(CreateMixedTapeRequest request, Guid ownerUserId, CancellationToken ct)
     {
         var tape = new MixedTape
@@ -25,48 +55,27 @@ public class MixedTapeService : IMixedTapeService
         return tape.Id;
     }
 
-    public async Task<IReadOnlyList<MixedTapeDto>> GetAllAsync(Guid ownerUserId, CancellationToken ct)
+    public async Task DeleteAsync(Guid id, CollectionCaller caller, CancellationToken ct)
     {
-        return await _db.MixedTapes.AsNoTracking()
-            .Include(m => m.Owner)
-            .Include(m => m.Items).ThenInclude(i => i.Track)
-            .Where(m => m.OwnerUserId == ownerUserId)
-            .OrderByDescending(m => m.CreatedUtc)
-            .Select(m => MapToDto(m))
-            .ToListAsync(ct);
-    }
-
-    public async Task<MixedTapeDto?> GetByIdAsync(Guid id, CancellationToken ct)
-    {
-        var tape = await _db.MixedTapes.AsNoTracking()
-            .Include(m => m.Owner)
-            .Include(m => m.Items.OrderBy(i => i.SortOrder))
-                .ThenInclude(i => i.Track)
-                    .ThenInclude(t => t.PrimaryArtist)
-            .Include(m => m.Items)
-                .ThenInclude(i => i.Track)
-                    .ThenInclude(t => t.Album)
-            .FirstOrDefaultAsync(m => m.Id == id, ct);
-
-        return tape == null ? null : MapToDto(tape);
-    }
-
-    public async Task DeleteAsync(Guid id, CancellationToken ct)
-    {
-        var tape = await _db.MixedTapes.FindAsync([id], ct)
-            ?? throw new KeyNotFoundException($"Mixed tape {id} not found.");
+        var tape = await LoadForWriteAsync(id, caller, ct);
         _db.MixedTapes.Remove(tape);
         await _db.SaveChangesAsync(ct);
     }
 
-    public async Task AddTrackAsync(Guid mixedTapeId, Guid trackId, CancellationToken ct)
+    public async Task AddTrackAsync(Guid mixedTapeId, Guid trackId, CollectionCaller caller, CancellationToken ct)
     {
         var tape = await _db.MixedTapes
             .Include(m => m.Items).ThenInclude(i => i.Track)
+            .Where(AccessibleBy(caller))
             .FirstOrDefaultAsync(m => m.Id == mixedTapeId, ct)
             ?? throw new KeyNotFoundException($"Mixed tape {mixedTapeId} not found.");
 
-        var track = await _db.Tracks.AsNoTracking().FirstOrDefaultAsync(t => t.Id == trackId, ct)
+        // Restricted tracks are treated as absent, so they cannot be smuggled onto a tape
+        // and streamed from there.
+        var track = await _db.Tracks.AsNoTracking()
+            .Where(t => t.Id == trackId)
+            .ApplyRestrictions(_db, caller.UserId)
+            .FirstOrDefaultAsync(ct)
             ?? throw new KeyNotFoundException($"Track {trackId} not found.");
 
         // Enforce 60-minute limit
@@ -93,8 +102,10 @@ public class MixedTapeService : IMixedTapeService
         await _db.SaveChangesAsync(ct);
     }
 
-    public async Task RemoveItemAsync(Guid mixedTapeId, Guid itemId, CancellationToken ct)
+    public async Task RemoveItemAsync(Guid mixedTapeId, Guid itemId, CollectionCaller caller, CancellationToken ct)
     {
+        await LoadForWriteAsync(mixedTapeId, caller, ct);
+
         var item = await _db.MixedTapeItems
             .FirstOrDefaultAsync(i => i.Id == itemId && i.MixedTapeId == mixedTapeId, ct)
             ?? throw new KeyNotFoundException($"Mixed tape item {itemId} not found.");
@@ -103,17 +114,79 @@ public class MixedTapeService : IMixedTapeService
         await _db.SaveChangesAsync(ct);
     }
 
-    private static MixedTapeDto MapToDto(MixedTape m)
+    // ── Queries ──
+
+    public async Task<IReadOnlyList<MixedTapeDto>> GetAllAsync(CollectionCaller caller, CancellationToken ct)
     {
-        var totalDuration = m.Items.Sum(i => i.Track.DurationSeconds ?? 0);
+        var tapes = await _db.MixedTapes.AsNoTracking()
+            .Include(m => m.Owner)
+            .Include(m => m.Items).ThenInclude(i => i.Track).ThenInclude(t => t.TrackGenres)
+            .Where(AccessibleBy(caller))
+            .OrderByDescending(m => m.CreatedUtc)
+            .ToListAsync(ct);
+
+        var restrictions = await LoadRestrictionsAsync(caller.UserId, ct);
+        return tapes.Select(m => MapToDto(m, restrictions)).ToList();
+    }
+
+    public async Task<MixedTapeDto?> GetByIdAsync(Guid id, CollectionCaller caller, CancellationToken ct)
+    {
+        var tape = await _db.MixedTapes.AsNoTracking()
+            .Include(m => m.Owner)
+            .Include(m => m.Items.OrderBy(i => i.SortOrder))
+                .ThenInclude(i => i.Track)
+                    .ThenInclude(t => t.PrimaryArtist)
+            .Include(m => m.Items)
+                .ThenInclude(i => i.Track)
+                    .ThenInclude(t => t.Album)
+            .Include(m => m.Items)
+                .ThenInclude(i => i.Track)
+                    .ThenInclude(t => t.TrackGenres)
+            .Where(AccessibleBy(caller))
+            .FirstOrDefaultAsync(m => m.Id == id, ct);
+
+        if (tape == null) return null;
+
+        return MapToDto(tape, await LoadRestrictionsAsync(caller.UserId, ct));
+    }
+
+    /// <summary>
+    /// The caller's deny lists, materialised once. Mixed tapes are mapped in memory (the
+    /// duration arithmetic does not translate cleanly), so the filter needs real sets rather
+    /// than the composable subqueries used for query-side filtering.
+    /// </summary>
+    private async Task<DenyLists> LoadRestrictionsAsync(Guid userId, CancellationToken ct)
+    {
+        var sets = _db.RestrictionsFor(userId);
+        return new DenyLists(
+            (await sets.AlbumIds.ToListAsync(ct)).ToHashSet(),
+            (await sets.ArtistIds.ToListAsync(ct)).ToHashSet(),
+            (await sets.GenreIds.ToListAsync(ct)).ToHashSet());
+    }
+
+    private sealed record DenyLists(HashSet<Guid> Albums, HashSet<Guid> Artists, HashSet<Guid> Genres)
+    {
+        public bool Allows(Track t) =>
+            (t.AlbumId == null || !Albums.Contains(t.AlbumId.Value)) &&
+            (t.PrimaryArtistId == null || !Artists.Contains(t.PrimaryArtistId.Value)) &&
+            !t.TrackGenres.Any(tg => Genres.Contains(tg.GenreId));
+    }
+
+    private static MixedTapeDto MapToDto(MixedTape m, DenyLists restrictions)
+    {
+        // Restricted entries are dropped from the listing, and from the totals with them, so
+        // the remaining-time figure still describes what the caller is looking at.
+        var items = m.Items.Where(i => restrictions.Allows(i.Track)).OrderBy(i => i.SortOrder).ToList();
+        var totalDuration = items.Sum(i => i.Track.DurationSeconds ?? 0);
+
         return new MixedTapeDto(
             m.Id, m.Name, m.OwnerUserId,
             m.Owner?.DisplayName,
             m.TargetDurationSeconds,
             totalDuration,
             Math.Max(0, m.TargetDurationSeconds - totalDuration),
-            m.Items.Count,
-            m.Items.OrderBy(i => i.SortOrder).Select(i => new MixedTapeItemDto(
+            items.Count,
+            items.Select(i => new MixedTapeItemDto(
                 i.Id, i.TrackId,
                 i.Track.Title,
                 i.Track.PrimaryArtist?.Name,

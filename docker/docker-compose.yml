@@ -1,3 +1,12 @@
+# Plain HTTP on port 8080 — for a TRUSTED LOCAL NETWORK ONLY.
+#
+# Everything travels in the clear on this setup: the sign-in password, bearer tokens,
+# the refresh cookie, SignalR access tokens and stream tickets. Anyone who can see the
+# traffic can take over an account.
+#
+# For anything reachable beyond a network you fully control, use docker-compose.tls.yml
+# instead, which puts Caddy in front and serves HTTPS.
+
 services:
   sonafly:
     build:
@@ -12,15 +21,26 @@ services:
       ConnectionStrings__DefaultConnection: ${DB_CONNECTION}
       SonaFly__ArtworkRoot: ${ARTWORK_ROOT}
       Jwt__Secret: ${JWT_SECRET}
-      SonaFly__AdminDefaultPassword: ${ADMIN_DEFAULT_PASSWORD}
+      # Leave ADMIN_DEFAULT_PASSWORD unset in .env to have a one-time admin password
+      # generated on first boot and printed once in this container's log.
+      SonaFly__AdminDefaultPassword: ${ADMIN_DEFAULT_PASSWORD:-}
+      # No TLS in this configuration, so HTTPS redirection and HSTS stay off. The app
+      # logs a warning at startup to keep that visible.
+      SonaFly__Deployment__UseHttps: "false"
     volumes:
       - sonafly_db:/app/data/db
       - sonafly_artwork:/app/data/artwork
+      # Data Protection key ring. Deleting this volume invalidates every outstanding
+      # stream URL; replicas must share it to validate each other's tickets.
+      - sonafly_keys:/app/data/keys
       - sonafly_logs:/app/data/logs
       - /mnt/music:/music/library-main:ro
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 volumes:
   sonafly_db:
   sonafly_artwork:
+  sonafly_keys:
   sonafly_logs:

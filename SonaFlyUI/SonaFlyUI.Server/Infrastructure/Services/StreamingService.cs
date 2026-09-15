@@ -14,10 +14,11 @@ public class StreamingService : IStreamingService
         _db = db;
     }
 
-    public async Task<StreamableTrackResult?> GetStreamableTrackAsync(Guid trackId, CancellationToken ct)
+    public async Task<StreamableTrackResult?> GetStreamableTrackAsync(Guid trackId, Guid userId, CancellationToken ct)
     {
         var track = await _db.Tracks
             .AsNoTracking()
+            .ApplyRestrictions(_db, userId)
             .FirstOrDefaultAsync(t => t.Id == trackId && t.IsIndexed && !t.IsMissing, ct);
 
         if (track == null) return null;
