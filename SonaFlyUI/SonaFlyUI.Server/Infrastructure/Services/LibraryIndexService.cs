@@ -49,12 +49,13 @@ public class LibraryIndexService : ILibraryIndexService
 
         // Adopt the job the API persisted when it accepted the request, so scan history shows
         // one row per requested scan rather than a queued row plus an unrelated running one.
-        var scanJob = await _db.ScanJobs.FirstOrDefaultAsync(j => j.Id == request.ScanJobId, ct);
-        if (scanJob == null)
-        {
-            scanJob = new ScanJob { Id = request.ScanJobId, LibraryRootId = libraryRootId };
-            _db.ScanJobs.Add(scanJob);
-        }
+        var scanJob = await _db.ScanJobs.FirstOrDefaultAsync(j => j.Id == request.ScanJobId, ct)
+            ?? throw new KeyNotFoundException(
+                $"Scan job {request.ScanJobId} no longer exists; it may have been invalidated by library maintenance.");
+
+        if (scanJob.LibraryRootId != libraryRootId)
+            throw new InvalidOperationException(
+                $"Scan job {request.ScanJobId} does not belong to library root {libraryRootId}.");
 
         scanJob.Status = ScanStatus.Running;
         scanJob.StartedUtc = DateTime.UtcNow;

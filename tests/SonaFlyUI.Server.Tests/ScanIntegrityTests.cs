@@ -56,9 +56,28 @@ public sealed class ScanIntegrityTests : IDisposable
     private LibraryIndexService Service(IFileScanner scanner, IMetadataReader reader) =>
         new(_db, scanner, reader, new NoArtworkService(), NullLogger<LibraryIndexService>.Instance);
 
-    private Task<ScanJobDto> ScanAsync(IFileScanner scanner, IMetadataReader reader, bool fullScan = false) =>
-        Service(scanner, reader).ScanLibraryRootAsync(
-            new ScanRequest(_root.Id, fullScan, Guid.NewGuid()), CancellationToken.None);
+    private async Task<ScanJobDto> ScanAsync(IFileScanner scanner, IMetadataReader reader, bool fullScan = false)
+    {
+        var job = new ScanJob { LibraryRootId = _root.Id };
+        _db.ScanJobs.Add(job);
+        await _db.SaveChangesAsync();
+
+        return await Service(scanner, reader).ScanLibraryRootAsync(
+            new ScanRequest(_root.Id, fullScan, job.Id), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AScanWhosePersistedJobWasPurgedDoesNotRepopulateTheLibrary()
+    {
+        var request = new ScanRequest(_root.Id, false, Guid.NewGuid());
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            Service(new StubScanner(files: [], traversedDirectories: [_root.Path]), new StubMetadataReader())
+                .ScanLibraryRootAsync(request, CancellationToken.None));
+
+        Assert.Empty(await _db.ScanJobs.ToListAsync());
+        Assert.Empty(await _db.Tracks.ToListAsync());
+    }
 
     private Track SeedTrack(string filePath, string genreName, string artistName, bool isMissing = false)
     {
