@@ -318,10 +318,7 @@ public class LibraryIndexService : ILibraryIndexService
 
     private async Task UpdateTrackAsync(Track track, AudioMetadata metadata, DiscoveredAudioFile file, CancellationToken ct)
     {
-        // File-level facts are always true, even when the tags could not be parsed.
-        track.FileSizeBytes = file.FileSizeBytes;
-        track.ModifiedUtcSource = file.LastModifiedUtc;
-        track.ModifiedUtc = DateTime.UtcNow;
+        // Presence is known independently of whether its tags can be parsed.
         track.IsMissing = false;
         track.IsIndexed = true;
 
@@ -329,11 +326,17 @@ public class LibraryIndexService : ILibraryIndexService
         {
             // The placeholder metadata says nothing about this file's tags. Overwriting the
             // last-known-good title/artist/genre — and dropping the junctions restrictions are
-            // enforced through — would be a regression, not an update (N15).
+            // enforced through — would be a regression, not an update (N15). Keep the previous
+            // size/timestamp fingerprint too, so an incremental scan retries this file instead
+            // of treating the failed attempt as a successful update.
             _logger.LogWarning(
                 "Keeping last-known-good metadata for {FilePath}: tags could not be parsed.", file.FilePath);
             return;
         }
+
+        track.FileSizeBytes = file.FileSizeBytes;
+        track.ModifiedUtcSource = file.LastModifiedUtc;
+        track.ModifiedUtc = DateTime.UtcNow;
 
         var artist = GetOrCreateArtist(metadata.Artist ?? metadata.AlbumArtist);
         var albumArtist = metadata.AlbumArtist != null && metadata.AlbumArtist != metadata.Artist

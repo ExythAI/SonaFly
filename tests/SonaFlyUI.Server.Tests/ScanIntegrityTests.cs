@@ -313,9 +313,24 @@ public sealed class ScanIntegrityTests : IDisposable
         // The junction restrictions are enforced through must survive too.
         Assert.True(await verify.TrackGenres.AnyAsync(tg => tg.TrackId == track.Id));
 
-        // The file facts we do know are still updated.
-        Assert.Equal(2000, stored.FileSizeBytes);
+        // Keep the last successful fingerprint so an unchanged follow-up scan retries parsing.
+        Assert.Equal(1000, stored.FileSizeBytes);
         Assert.False(stored.IsMissing);
+
+        await ScanAsync(new StubScanner(
+            files: [FileAt("/music/song.mp3", size: 2000)],
+            traversedDirectories: ["/music"]), new StubMetadataReader(new AudioMetadata
+            {
+                Title = "Recovered title",
+                Album = "Album",
+                Artist = "Coltrane",
+                Genre = "Jazz",
+                MimeType = "audio/mpeg"
+            }));
+
+        await verify.Entry(stored).ReloadAsync();
+        Assert.Equal("Recovered title", stored.Title);
+        Assert.Equal(2000, stored.FileSizeBytes);
     }
 
     // ---------------------------------------------------------------- stubs
