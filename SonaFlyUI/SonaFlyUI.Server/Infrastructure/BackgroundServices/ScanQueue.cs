@@ -17,7 +17,10 @@ public class ScanQueue : IScanQueue
         new BoundedChannelOptions(Capacity)
         {
             SingleReader = true,
-            FullMode = BoundedChannelFullMode.DropWrite
+            // TryWrite returns false in Wait mode when capacity is exhausted. DropWrite reports
+            // success even though it silently discards the item, which leaves its persisted
+            // ScanJob queued forever while the API incorrectly returns 202.
+            FullMode = BoundedChannelFullMode.Wait
         });
 
     public bool TryEnqueue(ScanRequest request) => _queue.Writer.TryWrite(request);
