@@ -108,6 +108,13 @@ public class SystemController : ControllerBase
         // to stop existing; reset and broadcast before deleting them.
         var clearedRooms = await _auditoriums.ResetAllRoomsAsync("The library was purged by an administrator.");
 
+        // Capture the exact files owned by artwork rows before the transaction removes those
+        // rows. The configured directory may contain operator-managed files or another app's
+        // data, neither of which this purge owns.
+        var ownedArtworkPaths = await _db.ArtworkAssets.AsNoTracking()
+            .Select(a => a.StoragePath)
+            .ToListAsync(ct);
+
         await using (var transaction = await _db.Database.BeginTransactionAsync(ct))
         {
             // Delete in dependency order to avoid FK issues. All of it commits together, so a
@@ -143,7 +150,7 @@ public class SystemController : ControllerBase
             await transaction.CommitAsync(ct);
         }
 
-        var cacheCleanup = await ClearArtworkCacheAsync(ct);
+        var cacheCleanup = await ClearArtworkCacheAsync(ownedArtworkPaths, ct);
 
         _logger.LogWarning("Library data purge complete. {Cache}", cacheCleanup.Message);
 
@@ -162,12 +169,14 @@ public class SystemController : ControllerBase
     /// The previous implementation recursively deleted whatever <c>SonaFly:ArtworkRoot</c>
     /// pointed at. A misconfigured value — the music folder, the data directory, the Data
     /// Protection key ring — therefore destroyed unrelated files. This refuses to run when the
-    /// configured cache overlaps anything that matters, deletes only the hash-shaped cache
-    /// entries inside it, and leaves the directory itself in place so a mounted volume is not
+    /// configured cache overlaps anything that matters, deletes only files represented by
+    /// ArtworkAsset rows, and leaves the directory itself in place so a mounted volume is not
     /// unmounted from under the process (backlog N16).
     /// </para>
     /// </summary>
-    private async Task<(bool Complete, string Message)> ClearArtworkCacheAsync(CancellationToken ct)
+    private async Task<(bool Complete, string Message)> ClearArtworkCacheAsync(
+        IReadOnlyCollection<string> ownedStoragePaths,
+        CancellationToken ct)
     {
         var artworkRoot = _config["SonaFly:ArtworkRoot"] ?? "./data/artwork";
         if (!FileSystemPaths.TryNormalize(Path.GetFullPath(artworkRoot), out var cacheRoot, out var pathError))
@@ -193,19 +202,35 @@ public class SystemController : ControllerBase
         var failures = 0;
         var removed = 0;
 
-        foreach (var entry in Directory.EnumerateFileSystemEntries(cacheRoot))
+        foreach (var storagePath in ownedStoragePaths.Distinct(FileSystemPaths.Comparer))
         {
             ct.ThrowIfCancellationRequested();
             try
             {
-                if (Directory.Exists(entry)) Directory.Delete(entry, recursive: true);
-                else System.IO.File.Delete(entry);
+                if (Path.IsPathRooted(storagePath))
+                    throw new InvalidOperationException("Artwork storage path must be relative.");
+
+                var entry = Path.GetFullPath(Path.Combine(cacheRoot, storagePath));
+                if (!FileSystemPaths.IsSameOrUnder(entry, cacheRoot) || FileSystemPaths.AreSame(entry, cacheRoot))
+                    throw new InvalidOperationException("Artwork storage path escapes the cache root.");
+
+                if (!System.IO.File.Exists(entry))
+                    continue;
+
+                System.IO.File.Delete(entry);
                 removed++;
+
+                var parent = Path.GetDirectoryName(entry);
+                if (parent != null && !FileSystemPaths.AreSame(parent, cacheRoot) &&
+                    !Directory.EnumerateFileSystemEntries(parent).Any())
+                {
+                    Directory.Delete(parent);
+                }
             }
             catch (Exception ex)
             {
                 failures++;
-                _logger.LogWarning(ex, "Could not remove artwork cache entry {Entry}", entry);
+                _logger.LogWarning(ex, "Could not remove owned artwork cache entry {StoragePath}", storagePath);
             }
         }
 

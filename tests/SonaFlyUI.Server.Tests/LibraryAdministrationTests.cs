@@ -197,8 +197,17 @@ public sealed class LibraryAdministrationTests : IDisposable
         var cached = Path.Combine(cache, "ab");
         Directory.CreateDirectory(cached);
         await File.WriteAllTextAsync(Path.Combine(cached, "abcd.jpg"), "image");
+        var unrelated = Path.Combine(cache, "operator-notes.txt");
+        await File.WriteAllTextAsync(unrelated, "keep me");
 
         _db.LibraryRoots.Add(new LibraryRoot { Name = "Music", Path = music });
+        _db.ArtworkAssets.Add(new ArtworkAsset
+        {
+            StoragePath = Path.Combine("ab", "abcd.jpg"),
+            Hash = "abcd",
+            MimeType = "image/jpeg",
+            FileSizeBytes = 5
+        });
         await _db.SaveChangesAsync();
 
         var controller = PurgeController(artworkRoot: cache);
@@ -209,6 +218,7 @@ public sealed class LibraryAdministrationTests : IDisposable
 
         Assert.True(Directory.Exists(cache));           // the mount point stays
         Assert.False(Directory.Exists(cached));         // its contents do not
+        Assert.True(File.Exists(unrelated));             // files not represented by an asset row are not ours
     }
 
     private SystemController PurgeController(string artworkRoot)
