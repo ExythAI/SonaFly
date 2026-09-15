@@ -1,6 +1,27 @@
 SonaFly Engineering Backlog
 ===========================
 
+FOLLOW-UP FIX PASS - 2026-09-15
+-------------------------------
+The six gaps found while reviewing the N13-N17 fixes are RESOLVED, each in its own commit:
+- a40de77: A queued request whose persisted ScanJob was removed by purge is rejected instead
+  of recreating the job and repopulating library data.
+- fc6fd82: Purge captures ArtworkAsset storage paths before deleting their rows and removes
+  only those owned files; unrelated files beneath ArtworkRoot are preserved.
+- 78bf488: ScanQueue uses bounded Wait mode, making TryEnqueue return false at capacity so the
+  API can settle the persisted job as Failed and return 503 instead of silently dropping it.
+- c713fc0: File stat/access failures are recorded as explicitly unverified files and cannot be
+  reconciled as missing merely because their parent directory was enumerated.
+- fa6437b: A successfully traversed ancestor now proves a deleted descendant directory absent;
+  failed and deliberately skipped/reparse-point subtrees override that proof and stay unverified.
+- fa90a30: A metadata parse failure retains the last successful size/timestamp fingerprint, so
+  later incremental scans retry the file while still restoring its present/indexed state.
+
+Verification: 224 server tests pass, 0 failed/skipped, using .NET 10 with
+SkipSpaBuild=true. New regression coverage includes purged jobs, queue saturation, owned-only
+artwork deletion, per-file access failure, deleted directories, protected subtrees, and metadata
+retry after transient failure. Docker/TLS/device and real-library validation remain outstanding.
+
 IMPLEMENTATION PASS - 2026-09-14 (scan integrity, purge, access consistency)
 ----------------------------------------------------------------------------
 N13-N22 are RESOLVED; see the STATUS paragraph on each. Verification: 219 server/mobile/host
