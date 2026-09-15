@@ -108,7 +108,7 @@ public class FileScanner : IFileScanner
                 catch (Exception ex)
                 {
                     // The file exists but we cannot stat it — that is not evidence of deletion.
-                    report.RecordFailure(filePath, ex.Message);
+                    report.RecordFileFailure(filePath, ex.Message);
                     continue;
                 }
 

@@ -16,6 +16,7 @@ public sealed class ScanTraversalReport
     private const int MaxRecordedFailures = 50;
 
     private readonly HashSet<string> _traversedDirectories = new(FileSystemPaths.Comparer);
+    private readonly HashSet<string> _unverifiedFiles = new(FileSystemPaths.Comparer);
     private readonly List<string> _failures = [];
 
     /// <summary>False when the root itself could not be opened at all.</summary>
@@ -42,12 +43,21 @@ public sealed class ScanTraversalReport
             _failures.Add($"{path}: {message}");
     }
 
+    public void RecordFileFailure(string filePath, string message)
+    {
+        _unverifiedFiles.Add(FileSystemPaths.NormalizeForComparison(filePath));
+        RecordFailure(filePath, message);
+    }
+
     /// <summary>
     /// True when this scan positively enumerated the directory holding
     /// <paramref name="filePath"/>, and can therefore be trusted about the file's absence.
     /// </summary>
     public bool CanVouchForAbsenceOf(string filePath)
     {
+        if (_unverifiedFiles.Contains(FileSystemPaths.NormalizeForComparison(filePath)))
+            return false;
+
         var directory = Path.GetDirectoryName(filePath);
         if (string.IsNullOrEmpty(directory)) return false;
         return _traversedDirectories.Contains(FileSystemPaths.NormalizeForComparison(directory));
