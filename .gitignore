@@ -32,3 +32,8 @@ _server.txt
 
 # Marketing site (separate deployment)
 SonaFlyWeb/
+
+# Local planning notes
+_backlog_upgrade.txt
+_music_id_update.txt
+music_identification_tool_requirements.txt
