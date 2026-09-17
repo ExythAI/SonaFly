@@ -37,7 +37,7 @@ public sealed class IdentificationOptions
     /// User-Agent sent to the MusicBrainz API. Configure a meaningful value
     /// with contact details before making live requests.
     /// </summary>
-    public string MusicBrainzUserAgent { get; set; } = "SonaFly/1.0";
+    public string MusicBrainzUserAgent { get; set; } = "SonaFly/1.0 ( https://github.com/ExythAI/SonaFly )";
 
     /// <summary>Bounded worker pool for local hash, probe, and fingerprint work.</summary>
     [Range(1, 32)]
@@ -78,7 +78,11 @@ public sealed class IdentificationOptions
     /// </summary>
     public bool AllowSourceFileWrites { get; set; }
 
-    /// <summary>Identifier of the active scoring rules, stored with every score.</summary>
+    /// <summary>
+    /// Kept for configuration compatibility. Scores record the version of the
+    /// scoring code that produced them (RecordingScorer.Version), since the
+    /// weights live in code rather than configuration.
+    /// </summary>
     public string ScoringVersion { get; set; } = "v0.1-recording-only";
 
     /// <summary>

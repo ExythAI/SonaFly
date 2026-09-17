@@ -13,8 +13,6 @@ public class OnlineArtworkService
 {
     private readonly HttpClient _http;
     private readonly ILogger<OnlineArtworkService> _logger;
-    private static readonly SemaphoreSlim _rateLimiter = new(1, 1);
-    private static DateTime _lastRequest = DateTime.MinValue;
 
     /// <summary>Hard ceiling on a downloaded cover image. Cover art is tens to hundreds of KB.</summary>
     private const int MaxImageBytes = 8 * 1024 * 1024;
@@ -245,24 +243,12 @@ public class OnlineArtworkService
         }
     }
 
-    /// <summary>MusicBrainz asks for at most one request per second; this enforces it process-wide.</summary>
-    private static async Task RateLimitAsync(CancellationToken ct)
-    {
-        await _rateLimiter.WaitAsync(ct);
-        try
-        {
-            var elapsed = DateTime.UtcNow - _lastRequest;
-            if (elapsed.TotalMilliseconds < 1100)
-            {
-                await Task.Delay(1100 - (int)elapsed.TotalMilliseconds, ct);
-            }
-            _lastRequest = DateTime.UtcNow;
-        }
-        finally
-        {
-            _rateLimiter.Release();
-        }
-    }
+    /// <summary>
+    /// MusicBrainz asks for at most one request per second. The limiter is shared with
+    /// identification lookups so their combined traffic stays within that rule.
+    /// </summary>
+    private static Task RateLimitAsync(CancellationToken ct) =>
+        Identification.ProviderRateLimiter.MusicBrainz.WaitAsync(ct);
 
     private static CancellationTokenSource CreateTimeoutScope(CancellationToken ct)
     {

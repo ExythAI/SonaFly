@@ -43,9 +43,14 @@ WORKDIR /app
 # curl is needed by HEALTHCHECK below. The previous Dockerfile installed it only in the
 # build stage, which is discarded, so the health probe could never run and the container
 # reported "unhealthy" forever. The slim aspnet image ships no HTTP client of its own.
+#
+# libchromaprint-tools provides fpcalc for music identification fingerprints; it pulls in
+# the FFmpeg decoding libraries it needs. The version comes from the base image's
+# distribution and is logged per fingerprint, so a rebuild that moves it stays visible.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends curl libchromaprint-tools && \
+    rm -rf /var/lib/apt/lists/* && \
+    fpcalc -version
 
 COPY --from=build /app/publish .
 
@@ -65,6 +70,9 @@ ENV SonaFly__ArtworkRoot=/app/data/artwork
 # Signs stream tickets. Mount a persistent volume here, or every container replacement
 # invalidates the stream URLs clients are currently playing.
 ENV SonaFly__DataProtectionKeyRoot=/app/data/keys
+# Bundled fingerprinting tool. Identification itself stays off until
+# SonaFly__Identification__Enabled=true is set for the container.
+ENV SonaFly__Identification__FpcalcPath=/usr/bin/fpcalc
 
 EXPOSE 8080
 

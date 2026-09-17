@@ -3,17 +3,20 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SonaFlyUI.Server.Application.DTOs;
+using SonaFlyUI.Server.Application.Identification;
 using SonaFlyUI.Server.Application.Interfaces;
 using SonaFlyUI.Server.Domain.Entities.Identification;
 using SonaFlyUI.Server.Domain.Enums;
 using SonaFlyUI.Server.Infrastructure.Configuration;
 using SonaFlyUI.Server.Infrastructure.Data;
+using SonaFlyUI.Server.Infrastructure.Identification;
 
 namespace SonaFlyUI.Server.Api.Controllers;
 
 /// <summary>
 /// Admin-only music identification endpoints (upgrade plan 13.1).
-/// Read-only first milestone: job lifecycle plus evidence inspection.
+/// Current milestone (plan stage B): job lifecycle, fingerprint and AcoustID
+/// candidates, and admin inspection; the background runner does the work.
 /// Catalog apply arrives in milestone D; source-file writes stay behind
 /// AllowSourceFileWrites and a writable mount (plan 14.3).
 /// Absolute server paths, raw provider responses, and secrets are never
@@ -143,15 +146,22 @@ public class IdentificationController : ControllerBase
             return Accepted(new { jobId = pending.Id, status = pending.Status.ToString(), message = "An analysis job is already active for this library root." });
         }
 
+        // A job lists its tracks when it is created. Queued during a scan, it
+        // would miss tracks the scan adds and keep ones the scan removes.
+        if (await IdentificationScanGuard.IsScanActiveAsync(_db, request.LibraryRootId, ct))
+        {
+            return Conflict(new { message = "A scan of this music folder is queued or running. Start identification after it finishes, so newly scanned tracks are included." });
+        }
+
+        var presentTracks = _db.Tracks.Where(t => t.LibraryRootId == request.LibraryRootId && t.IsMissing == false);
+
         List<Guid> trackIds;
         string selectionMode;
         if (request.TrackIds is { Length: > 0 })
         {
-            selectionMode = "TrackIds";
-            trackIds = await _db.Tracks
-                .Where(t => t.LibraryRootId == request.LibraryRootId &&
-                            t.IsMissing == false &&
-                            request.TrackIds.Contains(t.Id))
+            selectionMode = IdentificationSelectionModes.TrackIds;
+            trackIds = await presentTracks
+                .Where(t => request.TrackIds.Contains(t.Id))
                 .Select(t => t.Id)
                 .ToListAsync(ct);
             if (trackIds.Count == 0)
@@ -159,13 +169,39 @@ public class IdentificationController : ControllerBase
                 return BadRequest(new { message = "None of the requested tracks exist in this library root." });
             }
         }
-        else
+        else if (string.Equals(request.Mode, IdentificationSelectionModes.Root, StringComparison.OrdinalIgnoreCase))
         {
-            selectionMode = "Root";
-            trackIds = await _db.Tracks
-                .Where(t => t.LibraryRootId == request.LibraryRootId && t.IsMissing == false)
+            selectionMode = IdentificationSelectionModes.Root;
+            trackIds = await presentTracks.Select(t => t.Id).ToListAsync(ct);
+        }
+        else if (string.IsNullOrWhiteSpace(request.Mode) ||
+                 string.Equals(request.Mode, IdentificationSelectionModes.Unanalyzed, StringComparison.OrdinalIgnoreCase))
+        {
+            selectionMode = IdentificationSelectionModes.Unanalyzed;
+            var capabilities = new IdentificationCapabilities(_options.HasFpcalc, await _settings.GetEffectiveAcoustIdKeyAsync(ct));
+            var completed = capabilities.CompletedStatuses.ToList();
+
+            // Analysed means a completed item for the file as it is now: same
+            // path, size, and modification time. A changed file counts as new.
+            trackIds = await presentTracks
+                .Where(t => _db.IdentificationWorkItems.Any(w =>
+                    w.TrackId == t.Id &&
+                    completed.Contains(w.Status) &&
+                    _db.TrackFileRevisions.Any(r =>
+                        r.Id == w.FileRevisionId &&
+                        r.NormalizedPath == t.FilePath &&
+                        r.FileSizeBytes == t.FileSizeBytes &&
+                        r.ModifiedUtcSource == t.ModifiedUtcSource)) == false)
                 .Select(t => t.Id)
                 .ToListAsync(ct);
+            if (trackIds.Count == 0)
+            {
+                return Ok(new { jobId = (Guid?)null, status = "NothingToDo", message = "Every track in this music folder is already analysed." });
+            }
+        }
+        else
+        {
+            return BadRequest(new { message = "Unknown selection mode. Use Unanalyzed or Root." });
         }
 
         var job = new IdentificationJob
@@ -405,6 +441,54 @@ public class IdentificationController : ControllerBase
         return Ok(items.Select(w => new IdentificationWorkItemDto(
             w.Id, w.JobId, w.TrackId, w.Status.ToString(), w.Stage,
             w.AttemptCount, w.LastError, w.NextRetryUtc)).ToList());
+    }
+
+    /// <summary>
+    /// One work item with its scored candidates, for admin inspection (plan
+    /// stage B). Paths are relative to the music folder; nothing secret or raw
+    /// from a provider is returned.
+    /// </summary>
+    [HttpGet("items/{id:guid}")]
+    public async Task<ActionResult<IdentificationItemDetailDto>> GetItem(Guid id, CancellationToken ct)
+    {
+        var item = await _db.IdentificationWorkItems.AsNoTracking().FirstOrDefaultAsync(w => w.Id == id, ct);
+        if (item == null)
+        {
+            return NotFound();
+        }
+
+        var track = await _db.Tracks.AsNoTracking()
+            .Where(t => t.Id == item.TrackId)
+            .Select(t => new { t.Title, Artist = t.PrimaryArtist != null ? t.PrimaryArtist.Name : null, Album = t.Album != null ? t.Album.Title : null })
+            .FirstOrDefaultAsync(ct);
+        var revision = item.FileRevisionId == null
+            ? null
+            : await _db.TrackFileRevisions.AsNoTracking().FirstOrDefaultAsync(r => r.Id == item.FileRevisionId, ct);
+        var snapshot = revision == null
+            ? null
+            : await _db.OriginalTagSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.FileRevisionId == revision.Id, ct);
+        var fingerprintDuration = revision == null
+            ? null
+            : await _db.AcousticFingerprints.AsNoTracking()
+                .Where(f => f.FileRevisionId == revision.Id)
+                .Select(f => f.DurationSeconds)
+                .FirstOrDefaultAsync(ct);
+
+        var candidates = await _db.RecordingCandidates.AsNoTracking()
+            .Where(c => c.WorkItemId == id)
+            .OrderByDescending(c => c.FinalScore)
+            .Select(c => new RecordingCandidateDto(
+                c.Provider, c.AcoustId, c.MusicBrainzRecordingId, c.Title, c.Artist,
+                c.RawProviderScore, c.FinalScore, c.ConfidenceBand, c.ScoringVersion,
+                c.ScoringBreakdownJson, c.Conflicts, c.Provenance))
+            .ToListAsync(ct);
+
+        return Ok(new IdentificationItemDetailDto(
+            item.Id, item.JobId, item.TrackId, item.Status.ToString(), item.Stage, item.LastError,
+            track?.Title, track?.Artist, track?.Album,
+            revision?.RelativePath, revision?.Sha256, fingerprintDuration,
+            snapshot?.Title, snapshot?.Artist, snapshot?.Album, snapshot?.MusicBrainzRecordingId,
+            candidates));
     }
 
     /// <summary>

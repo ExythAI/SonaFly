@@ -239,3 +239,28 @@ export interface IdentificationKeyStateDto {
     configured: boolean;
     source: string;
 }
+
+export interface IdentificationJobDto {
+    id: string;
+    libraryRootId: string;
+    libraryRootName: string | null;
+    status: 'Queued' | 'Running' | 'WaitingForNetwork' | 'Paused' | 'Completed' | 'CompletedWithErrors' | 'Cancelled' | 'Failed';
+    stage: string | null;
+    startedUtc: string | null;
+    finishedUtc: string | null;
+    totalItems: number;
+    hashedCount: number;
+    fingerprintedCount: number;
+    lookedUpCount: number;
+    resolvedCount: number;
+    ambiguousCount: number;
+    errorCount: number;
+    proposalsReadyCount: number;
+    errorSummary: string | null;
+}
+
+export interface IdentificationJobQueuedDto {
+    jobId: string | null;
+    status: string;
+    message: string;
+}

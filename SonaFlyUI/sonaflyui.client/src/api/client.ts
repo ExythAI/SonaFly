@@ -5,7 +5,7 @@ import {
 } from './session.ts';
 import type {
     AlbumDetailDto, AlbumDto, ArtistDto, AuditoriumListDto, CreateUserRequest, GenreDto,
-    IdentificationKeyStateDto, IdentificationStatusDto,
+    IdentificationJobDto, IdentificationJobQueuedDto, IdentificationKeyStateDto, IdentificationStatusDto,
     LibraryRootDto, MixedTapeDto, PaginatedResult, PlaylistDto, ScanJobDto, SearchResultDto,
     SystemStatusDto, TrackListItemDto, UserInfoDto, UserRestrictionDto,
 } from './types.ts';
@@ -269,6 +269,14 @@ export const systemApi = {
 // ── Music identification ──
 export const identificationApi = {
     status: () => api.get<IdentificationStatusDto>('/identification/status'),
+    jobs: (rootId: string, take = 1) => api.get<IdentificationJobDto[]>('/identification/jobs', { params: { rootId, take } }),
+    // No idempotency key: the server's one-active-job-per-folder rule already absorbs repeat clicks.
+    createJob: (libraryRootId: string, mode: 'Unanalyzed' | 'Root') =>
+        api.post<IdentificationJobQueuedDto>('/identification/jobs', { libraryRootId, mode }),
+    pause: (jobId: string) => api.post(`/identification/jobs/${jobId}/pause`),
+    resume: (jobId: string) => api.post(`/identification/jobs/${jobId}/resume`),
+    cancel: (jobId: string) => api.post(`/identification/jobs/${jobId}/cancel`),
+    retryErrors: (jobId: string) => api.post(`/identification/jobs/${jobId}/retry-errors`),
 };
 
 // ── Server settings (admin) ──

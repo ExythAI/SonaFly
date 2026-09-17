@@ -31,7 +31,14 @@ public enum FileAnalysisStatus
     Ambiguous,
     Unidentified,
     RetryableError,
-    PermanentError
+    PermanentError,
+
+    /// <summary>
+    /// Not analysed because the track or its file left the library after the
+    /// job was queued (for example, a scan removed it). Never counts as
+    /// analysed, so a later "not yet analysed" job picks the file up again.
+    /// </summary>
+    Skipped
 }
 
 /// <summary>

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Alert, Box, Typography, Card, CardContent, Button, TextField, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Chip, Stack, Menu, MenuItem } from '@mui/material';
+import { Alert, Box, Typography, Card, CardContent, Button, TextField, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Chip, Stack, Menu, MenuItem, LinearProgress } from '@mui/material';
 import { Add, Delete, FolderOpen, Refresh, MoreVert } from '@mui/icons-material';
 import { libraryRootsApi, identificationApi, settingsApi } from '../api/client';
+import type { IdentificationJobDto, IdentificationStatusDto } from '../api/types';
 import { useConfirm, errorMessage } from '../components/Feedback';
 import { PageHeader, PageLoading, QueryError, EmptyState } from '../components/PageParts';
 
@@ -57,10 +58,70 @@ function IdentificationCard() {
         </>}
     </CardContent></Card>;
 }
+const activeJobStatuses: IdentificationJobDto['status'][] = ['Queued', 'Running', 'WaitingForNetwork', 'Paused'];
+
+function FolderIdentification({ folder, status }: { folder: Folder; status: IdentificationStatusDto }) {
+    const qc = useQueryClient();
+    const confirm = useConfirm();
+    const jobs = useQuery({
+        queryKey: ['identification-jobs', folder.id],
+        queryFn: () => identificationApi.jobs(folder.id).then(r => r.data),
+        refetchInterval: query => query.state.data?.some(j => activeJobStatuses.includes(j.status)) ? 4000 : 30000,
+    });
+    const refresh = () => { qc.invalidateQueries({ queryKey: ['identification-jobs', folder.id] }); };
+    const queue = useMutation({
+        mutationFn: (mode: 'Unanalyzed' | 'Root') => identificationApi.createJob(folder.id, mode).then(r => r.data),
+        meta: { successMessage: 'Identification request sent.' },
+        onSuccess: refresh,
+    });
+    const control = useMutation({
+        mutationFn: ({ action, jobId }: { action: 'pause' | 'resume' | 'cancel' | 'retryErrors'; jobId: string }) => identificationApi[action](jobId),
+        meta: { successMessage: 'Identification job updated.' },
+        onSuccess: refresh,
+    });
+    const job = jobs.data?.[0];
+    const active = !!job && activeJobStatuses.includes(job.status);
+    const scanning = ['Running', 'Queued'].includes(folder.lastScanStatus ?? '');
+    const canLookUp = status.acoustIdConfigured && status.fpcalcConfigured;
+    const done = job ? (canLookUp ? job.lookedUpCount : status.fpcalcConfigured ? job.fingerprintedCount : job.hashedCount) + job.errorCount : 0;
+    const progress = job && job.totalItems > 0 ? Math.min(100, Math.round(100 * done / job.totalItems)) : 0;
+    const reidentifyAll = async () => {
+        if (await confirm({ title: `Re-identify everything in “${folder.name}”?`, description: 'Every track is checked again. Stored fingerprints and cached lookups are reused, so unchanged files finish quickly.', action: 'Re-identify all' })) queue.mutate('Root');
+    };
+
+    return <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} justifyContent="space-between">
+            <Box minWidth={0}>
+                <Typography variant="subtitle2">Identification</Typography>
+                <Typography variant="body2" color="text.secondary">
+                    {queue.data?.status === 'NothingToDo' && !active ? queue.data.message
+                        : job ? `${job.status === 'CompletedWithErrors' ? 'Completed with errors' : job.status === 'WaitingForNetwork' ? 'Waiting to retry' : job.status}${job.stage ? ` · ${job.stage}` : ''}`
+                            : 'Not identified yet'}
+                </Typography>
+            </Box>
+            <Stack direction="row" gap={1} flexWrap="wrap">
+                {job && active && job.status !== 'Paused' && <Button size="small" disabled={control.isPending} onClick={() => control.mutate({ action: 'pause', jobId: job.id })}>Pause</Button>}
+                {job?.status === 'Paused' && <Button size="small" disabled={control.isPending} onClick={() => control.mutate({ action: 'resume', jobId: job.id })}>Resume</Button>}
+                {job && active && <Button size="small" color="warning" disabled={control.isPending} onClick={() => control.mutate({ action: 'cancel', jobId: job.id })}>Cancel</Button>}
+                {job && !active && job.errorCount > 0 && job.status !== 'Cancelled' && <Button size="small" disabled={control.isPending} onClick={() => control.mutate({ action: 'retryErrors', jobId: job.id })}>Retry errors</Button>}
+                {!active && <Button size="small" variant="outlined" disabled={!folder.isEnabled || scanning || queue.isPending} onClick={() => queue.mutate('Unanalyzed')}>Identify new music</Button>}
+                {!active && job && <Button size="small" disabled={!folder.isEnabled || scanning || queue.isPending} onClick={() => void reidentifyAll()}>Re-identify all</Button>}
+            </Stack>
+        </Stack>
+        {scanning && !active && <Typography variant="caption" color="text.secondary">Identification can start once the scan finishes, so newly scanned tracks are included.</Typography>}
+        {job && active && <LinearProgress variant="determinate" value={progress} sx={{ mt: 1 }} aria-label={`Identification progress for ${folder.name}`} />}
+        {job && job.totalItems > 0 && <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.5 }}>
+            {job.totalItems.toLocaleString()} tracks · {job.fingerprintedCount.toLocaleString()} fingerprinted · {job.resolvedCount.toLocaleString()} identified · {job.ambiguousCount.toLocaleString()} need review · {job.errorCount.toLocaleString()} errors
+        </Typography>}
+        {job?.errorSummary && <Alert severity="warning" sx={{ mt: 1 }}>{job.errorSummary}</Alert>}
+    </Box>;
+}
+
 export default function LibraryRootsPage() {
     const qc = useQueryClient();
     const confirm = useConfirm();
     const roots = useQuery({ queryKey: ['library-roots'], queryFn: () => libraryRootsApi.getAll().then(r => r.data as Folder[]), refetchInterval: 3000 });
+    const identification = useQuery({ queryKey: ['identification-status'], queryFn: () => identificationApi.status().then(r => r.data) });
     const [open, setOpen] = useState(false);
     const [form, setForm] = useState({ name: '', path: '' });
     const [menu, setMenu] = useState<{ anchor: HTMLElement; folder: Folder } | null>(null);
@@ -93,6 +154,7 @@ export default function LibraryRootsPage() {
                     </Stack>
                 </Stack>
                 {folder.lastScanError && <Alert severity="error" sx={{ mt: 2 }}>{folder.lastScanError}</Alert>}
+                {identification.data?.enabled && <FolderIdentification folder={folder} status={identification.data} />}
             </CardContent></Card>)}</Stack>}
         <Menu anchorEl={menu?.anchor} open={!!menu} onClose={() => setMenu(null)}>
             <MenuItem disabled={scan.isPending || !menu?.folder.isEnabled || ['Running', 'Queued'].includes(menu?.folder.lastScanStatus ?? '')} onClick={() => { if (menu) scan.mutate({ id: menu.folder.id, full: true }); setMenu(null); }}>Rescan all metadata</MenuItem>

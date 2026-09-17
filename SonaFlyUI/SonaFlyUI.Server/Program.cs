@@ -6,9 +6,11 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using SonaFlyUI.Server.Api.Hubs;
 using SonaFlyUI.Server.Api.Middleware;
+using SonaFlyUI.Server.Application.Identification;
 using SonaFlyUI.Server.Application.Interfaces;
 using SonaFlyUI.Server.Domain.Entities;
 using SonaFlyUI.Server.Infrastructure.BackgroundServices;
@@ -210,6 +212,19 @@ builder.Services.AddSingleton<IScanQueue, ScanQueue>();
 // Serializes scans against destructive maintenance (backlog N16).
 builder.Services.AddSingleton<LibraryMaintenanceGate>();
 builder.Services.AddHostedService<LibraryScanBackgroundService>();
+
+// Music identification worker (upgrade plan 6, 7, and 12). Idle while disabled.
+builder.Services.AddSingleton<AcoustIdThrottle>();
+builder.Services.AddSingleton<MusicBrainzThrottle>();
+builder.Services.AddSingleton<ITagEvidenceReader, TagEvidenceReader>();
+builder.Services.AddSingleton<IFingerprintTool, FpcalcFingerprintTool>();
+builder.Services.AddHttpClient<IAcoustIdClient, AcoustIdClient>((sp, http) =>
+    http.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<IOptions<IdentificationOptions>>().Value.RequestTimeoutSeconds));
+builder.Services.AddHttpClient<IMusicBrainzClient, MusicBrainzClient>((sp, http) =>
+    http.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<IOptions<IdentificationOptions>>().Value.RequestTimeoutSeconds));
+builder.Services.AddScoped<IdentificationItemProcessor>();
+builder.Services.AddSingleton<IdentificationJobRunner>();
+builder.Services.AddHostedService<IdentificationBackgroundService>();
 
 // Streaming & Playlists
 builder.Services.AddScoped<IStreamingService, StreamingService>();
