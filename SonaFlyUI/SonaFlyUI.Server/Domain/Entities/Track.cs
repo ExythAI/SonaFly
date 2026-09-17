@@ -1,5 +1,7 @@
 namespace SonaFlyUI.Server.Domain.Entities;
 
+using SonaFlyUI.Server.Domain.Entities.Identification;
+
 public class Track : EntityBase
 {
     public Guid LibraryRootId { get; set; }
@@ -16,6 +18,16 @@ public class Track : EntityBase
     public string? SortTitle { get; set; }
     public Guid? AlbumId { get; set; }
     public Guid? PrimaryArtistId { get; set; }
+
+    /// <summary>
+    /// Approved exact release (backlog U01). Set only by applying an approved
+    /// release decision; the ordinary scan never writes or clears it, so a
+    /// full metadata rescan preserves edition identity. Null means the track
+    /// carries the shared local or unknown Album identity, including while
+    /// its edition is still ambiguous.
+    /// </summary>
+    public Guid? CatalogReleaseId { get; set; }
+
     public string? Genre { get; set; }
     public string MimeType { get; set; } = string.Empty;
     public string? ContentHash { get; set; }
@@ -26,6 +38,7 @@ public class Track : EntityBase
     public LibraryRoot LibraryRoot { get; set; } = null!;
     public Album? Album { get; set; }
     public Artist? PrimaryArtist { get; set; }
+    public CatalogRelease? CatalogRelease { get; set; }
     public ICollection<TrackArtist> TrackArtists { get; set; } = new List<TrackArtist>();
     public ICollection<TrackGenre> TrackGenres { get; set; } = new List<TrackGenre>();
     public ICollection<PlaylistItem> PlaylistItems { get; set; } = new List<PlaylistItem>();

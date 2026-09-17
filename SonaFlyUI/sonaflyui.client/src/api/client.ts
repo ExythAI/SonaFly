@@ -5,6 +5,7 @@ import {
 } from './session.ts';
 import type {
     AlbumDetailDto, AlbumDto, ArtistDto, AuditoriumListDto, CreateUserRequest, GenreDto,
+    IdentificationKeyStateDto, IdentificationStatusDto,
     LibraryRootDto, MixedTapeDto, PaginatedResult, PlaylistDto, ScanJobDto, SearchResultDto,
     SystemStatusDto, TrackListItemDto, UserInfoDto, UserRestrictionDto,
 } from './types.ts';
@@ -263,6 +264,18 @@ export const systemApi = {
     health: () => api.get('/health'),
     status: () => api.get<SystemStatusDto>('/system/status'),
     purge: () => api.post('/system/purge'),
+};
+
+// ── Music identification ──
+export const identificationApi = {
+    status: () => api.get<IdentificationStatusDto>('/identification/status'),
+};
+
+// ── Server settings (admin) ──
+export const settingsApi = {
+    getIdentificationKeys: () => api.get<IdentificationKeyStateDto>('/settings/identification'),
+    saveAcoustIdKey: (key: string) => api.put<IdentificationKeyStateDto>('/settings/identification/acoustid-key', { key }),
+    clearAcoustIdKey: () => api.delete<IdentificationKeyStateDto>('/settings/identification/acoustid-key'),
 };
 
 // ── Auditoriums ──

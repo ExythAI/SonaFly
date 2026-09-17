@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SonaFlyUI.Server.Infrastructure.Data;
 
@@ -10,9 +11,11 @@ using SonaFlyUI.Server.Infrastructure.Data;
 namespace SonaFlyUI.Server.Migrations
 {
     [DbContext(typeof(SonaFlyDbContext))]
-    partial class SonaFlyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260917012412_AddMusicIdentificationFoundation")]
+    partial class AddMusicIdentificationFoundation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
@@ -582,141 +585,6 @@ namespace SonaFlyUI.Server.Migrations
                     b.HasIndex("TrackId");
 
                     b.ToTable("AlbumGroupMembers");
-                });
-
-            modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Identification.CatalogOverride", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("ApprovedByUserId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("ApprovedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Field")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("ModifiedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("ProposalId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("SourceFileSizeBytes")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("SourceFingerprintDigest")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("SourceModifiedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("TrackId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("ValueId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ValueText")
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TrackId", "Field")
-                        .IsUnique();
-
-                    b.ToTable("CatalogOverrides");
-                });
-
-            modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Identification.CatalogRelease", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("AlbumId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("ApprovedByUserId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("ApprovedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ArtistName")
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Barcode")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CatalogNumber")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Country")
-                        .HasMaxLength(16)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Date")
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Format")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Label")
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("LibraryRootId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("ModifiedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MusicBrainzReleaseGroupId")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MusicBrainzReleaseId")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("SourceProposalId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Status")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AlbumId");
-
-                    b.HasIndex("MusicBrainzReleaseId");
-
-                    b.ToTable("CatalogReleases");
                 });
 
             modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Identification.ChangeJournal", b =>
@@ -1808,41 +1676,6 @@ namespace SonaFlyUI.Server.Migrations
                     b.ToTable("ScanJobs");
                 });
 
-            modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.ServerSetting", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("EncryptedValue")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Key")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("ModifiedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("UpdatedByUserId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("UpdatedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Key")
-                        .IsUnique();
-
-                    b.ToTable("ServerSettings");
-                });
-
             modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Track", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1854,9 +1687,6 @@ namespace SonaFlyUI.Server.Migrations
 
                     b.Property<int?>("BitRateKbps")
                         .HasColumnType("INTEGER");
-
-                    b.Property<Guid?>("CatalogReleaseId")
-                        .HasColumnType("TEXT");
 
                     b.Property<string>("ContentHash")
                         .HasColumnType("TEXT");
@@ -1930,8 +1760,6 @@ namespace SonaFlyUI.Server.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AlbumId");
-
-                    b.HasIndex("CatalogReleaseId");
 
                     b.HasIndex("FilePath");
 
@@ -2161,28 +1989,6 @@ namespace SonaFlyUI.Server.Migrations
                     b.Navigation("Group");
                 });
 
-            modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Identification.CatalogOverride", b =>
-                {
-                    b.HasOne("SonaFlyUI.Server.Domain.Entities.Track", "Track")
-                        .WithMany()
-                        .HasForeignKey("TrackId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Track");
-                });
-
-            modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Identification.CatalogRelease", b =>
-                {
-                    b.HasOne("SonaFlyUI.Server.Domain.Entities.Album", "Album")
-                        .WithMany()
-                        .HasForeignKey("AlbumId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Album");
-                });
-
             modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Identification.IdentificationJob", b =>
                 {
                     b.HasOne("SonaFlyUI.Server.Domain.Entities.LibraryRoot", "LibraryRoot")
@@ -2347,11 +2153,6 @@ namespace SonaFlyUI.Server.Migrations
                         .HasForeignKey("AlbumId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("SonaFlyUI.Server.Domain.Entities.Identification.CatalogRelease", "CatalogRelease")
-                        .WithMany()
-                        .HasForeignKey("CatalogReleaseId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("SonaFlyUI.Server.Domain.Entities.LibraryRoot", "LibraryRoot")
                         .WithMany("Tracks")
                         .HasForeignKey("LibraryRootId")
@@ -2364,8 +2165,6 @@ namespace SonaFlyUI.Server.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Album");
-
-                    b.Navigation("CatalogRelease");
 
                     b.Navigation("LibraryRoot");
 

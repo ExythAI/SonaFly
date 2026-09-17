@@ -89,7 +89,7 @@ public sealed class LibraryAdministrationTests : IDisposable
     public async Task ATrailingSeparatorIsCanonicalizedRatherThanTrimmedBlindly()
     {
         var folder = NewFolder("library");
-        var service = new LibraryRootService(_db);
+        var service = new LibraryRootService(_db, new LibraryMaintenanceGate());
 
         var id = await service.CreateAsync(
             new CreateLibraryRootRequest("Music", folder + Path.DirectorySeparatorChar), CancellationToken.None);
@@ -102,7 +102,7 @@ public sealed class LibraryAdministrationTests : IDisposable
     public async Task DuplicateDetectionComparesTheCanonicalizedPathNotTheRawInput()
     {
         var folder = NewFolder("library");
-        var service = new LibraryRootService(_db);
+        var service = new LibraryRootService(_db, new LibraryMaintenanceGate());
 
         await service.CreateAsync(new CreateLibraryRootRequest("Music", folder), CancellationToken.None);
 
@@ -117,7 +117,7 @@ public sealed class LibraryAdministrationTests : IDisposable
     [Fact]
     public async Task ARelativePathIsRejectedRatherThanStoredAsIs()
     {
-        var service = new LibraryRootService(_db);
+        var service = new LibraryRootService(_db, new LibraryMaintenanceGate());
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             service.CreateAsync(new CreateLibraryRootRequest("Music", "music/library"), CancellationToken.None));
@@ -127,7 +127,7 @@ public sealed class LibraryAdministrationTests : IDisposable
     public async Task UpdateAppliesTheSameAccessibilityCheckAsCreate()
     {
         var folder = NewFolder("library");
-        var service = new LibraryRootService(_db);
+        var service = new LibraryRootService(_db, new LibraryMaintenanceGate());
         var id = await service.CreateAsync(new CreateLibraryRootRequest("Music", folder), CancellationToken.None);
 
         var gone = Path.Combine(_scratch, "not-there");

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SonaFlyUI.Server.Infrastructure.Data;
 
@@ -10,9 +11,11 @@ using SonaFlyUI.Server.Infrastructure.Data;
 namespace SonaFlyUI.Server.Migrations
 {
     [DbContext(typeof(SonaFlyDbContext))]
-    partial class SonaFlyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260917013321_AddCatalogReleaseAndOverrides")]
+    partial class AddCatalogReleaseAndOverrides
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
@@ -1806,41 +1809,6 @@ namespace SonaFlyUI.Server.Migrations
                     b.HasIndex("LibraryRootId");
 
                     b.ToTable("ScanJobs");
-                });
-
-            modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.ServerSetting", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("EncryptedValue")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Key")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("ModifiedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("UpdatedByUserId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("UpdatedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Key")
-                        .IsUnique();
-
-                    b.ToTable("ServerSettings");
                 });
 
             modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Track", b =>

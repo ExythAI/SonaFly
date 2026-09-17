@@ -16,6 +16,7 @@ using SonaFlyUI.Server.Infrastructure.Configuration;
 using SonaFlyUI.Server.Infrastructure.Data;
 using SonaFlyUI.Server.Infrastructure.HealthChecks;
 using SonaFlyUI.Server.Infrastructure.Identity;
+using SonaFlyUI.Server.Infrastructure.Identification;
 using SonaFlyUI.Server.Infrastructure.Services;
 using static SonaFlyUI.Server.Api.Controllers.AuthController;
 
@@ -142,6 +143,11 @@ var deployment = builder.Configuration.GetSection(DeploymentOptions.SectionName)
                  ?? new DeploymentOptions();
 builder.Services.Configure<DeploymentOptions>(builder.Configuration.GetSection(DeploymentOptions.SectionName));
 
+// ── Music identification (upgrade plan, section 15.1) ──
+// Disabled by default: with no configuration the scan and playback paths
+// behave exactly as before. Secrets stay in env vars / user secrets.
+builder.Services.AddIdentificationOptions(builder.Configuration);
+
 if (deployment.HasTrustedProxy)
 {
     // Throws on a malformed address or network, so a typo fails startup rather than
@@ -195,6 +201,8 @@ builder.Services.AddScoped<IUserSecurityService, UserSecurityService>();
 builder.Services.AddScoped<ILibraryRootService, LibraryRootService>();
 builder.Services.AddScoped<IFileScanner, FileScanner>();
 builder.Services.AddScoped<IMetadataReader, MetadataReader>();
+builder.Services.AddScoped<IFileHashService, FileHashService>();
+builder.Services.AddScoped<IServerSettingsService, ServerSettingsService>();
 builder.Services.AddHttpClient<OnlineArtworkService>();
 builder.Services.AddScoped<IArtworkService, ArtworkService>();
 builder.Services.AddScoped<ILibraryIndexService, LibraryIndexService>();

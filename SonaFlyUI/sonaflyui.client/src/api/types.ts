@@ -221,3 +221,21 @@ export interface AuditoriumListDto {
     activeUserCount: number;
     nowPlaying: string | null;
 }
+
+// ── Music identification ──
+
+export interface IdentificationStatusDto {
+    enabled: boolean;
+    acoustIdConfigured: boolean;
+    acoustIdSource: string;
+    fpcalcConfigured: boolean;
+    ffmpegConfigured: boolean;
+    localOnlyMode: boolean;
+    blockers: string[];
+    message: string;
+}
+
+export interface IdentificationKeyStateDto {
+    configured: boolean;
+    source: string;
+}

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using SonaFlyUI.Server.Domain.Entities;
+using SonaFlyUI.Server.Domain.Entities.Identification;
 
 namespace SonaFlyUI.Server.Infrastructure.Data;
 
@@ -25,6 +26,28 @@ public class SonaFlyDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
     public DbSet<UserRestriction> UserRestrictions => Set<UserRestriction>();
     public DbSet<Auditorium> Auditoriums => Set<Auditorium>();
     public DbSet<AuditoriumQueueItem> AuditoriumQueueItems => Set<AuditoriumQueueItem>();
+
+    // ── Music identification (upgrade plan, section 11) ──
+    // Additive tables only: the analyzer owns evidence, candidates, decisions,
+    // and proposals, while the ordinary scan keeps owning the playable catalog.
+    public DbSet<TrackFileRevision> TrackFileRevisions => Set<TrackFileRevision>();
+    public DbSet<OriginalTagSnapshot> OriginalTagSnapshots => Set<OriginalTagSnapshot>();
+    public DbSet<AcousticFingerprint> AcousticFingerprints => Set<AcousticFingerprint>();
+    public DbSet<IdentificationJob> IdentificationJobs => Set<IdentificationJob>();
+    public DbSet<IdentificationWorkItem> IdentificationWorkItems => Set<IdentificationWorkItem>();
+    public DbSet<ProviderCacheEntry> ProviderCacheEntries => Set<ProviderCacheEntry>();
+    public DbSet<RecordingCandidate> RecordingCandidates => Set<RecordingCandidate>();
+    public DbSet<AlbumGroup> AlbumGroups => Set<AlbumGroup>();
+    public DbSet<AlbumGroupMember> AlbumGroupMembers => Set<AlbumGroupMember>();
+    public DbSet<ReleaseCandidate> ReleaseCandidates => Set<ReleaseCandidate>();
+    public DbSet<MetadataProposal> MetadataProposals => Set<MetadataProposal>();
+    public DbSet<IdentificationError> IdentificationErrors => Set<IdentificationError>();
+    public DbSet<ChangeJournal> ChangeJournals => Set<ChangeJournal>();
+    public DbSet<CatalogRelease> CatalogReleases => Set<CatalogRelease>();
+    public DbSet<CatalogOverride> CatalogOverrides => Set<CatalogOverride>();
+
+    /// <summary>Admin-managed server settings, including encrypted secrets.</summary>
+    public DbSet<ServerSetting> ServerSettings => Set<ServerSetting>();
 
     /// <summary>
     /// The absolute path of the SQLite database file, when this context is backed by one.
@@ -100,6 +123,8 @@ public class SonaFlyDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
             e.HasOne(x => x.LibraryRoot).WithMany(lr => lr.Tracks).HasForeignKey(x => x.LibraryRootId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Album).WithMany(a => a.Tracks).HasForeignKey(x => x.AlbumId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.PrimaryArtist).WithMany(a => a.PrimaryTracks).HasForeignKey(x => x.PrimaryArtistId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => x.CatalogReleaseId);
+            e.HasOne(x => x.CatalogRelease).WithMany().HasForeignKey(x => x.CatalogReleaseId).OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── TrackArtist (composite key) ──
@@ -203,6 +228,239 @@ public class SonaFlyDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
             e.HasOne(x => x.Track).WithMany().HasForeignKey(x => x.TrackId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.QueuedByUser).WithMany().HasForeignKey(x => x.QueuedByUserId).OnDelete(DeleteBehavior.NoAction);
             e.HasIndex(x => new { x.AuditoriumId, x.Position });
+        });
+
+        ConfigureIdentification(builder);
+    }
+
+    /// <summary>
+    /// Additive music-identification tables (upgrade plan, section 11).
+    /// Identification enums are persisted as strings so values can be appended
+    /// safely. No unique constraint on SHA-256: identical bytes are legitimate.
+    /// Purging a library cascades through LibraryRoot-owned rows, while the
+    /// audit journal keeps plain IDs so retention policy decides its lifetime.
+    /// </summary>
+    private static void ConfigureIdentification(ModelBuilder builder)
+    {
+        builder.Entity<TrackFileRevision>(e =>
+        {
+            e.HasIndex(x => new { x.LibraryRootId, x.NormalizedPath });
+            e.HasIndex(x => x.TrackId);
+            e.HasIndex(x => x.Sha256);
+            e.Property(x => x.NormalizedPath).HasMaxLength(2048);
+            e.Property(x => x.RelativePath).HasMaxLength(2048);
+            e.Property(x => x.Sha256).HasMaxLength(128);
+            e.Property(x => x.HashAlgorithm).HasMaxLength(32);
+            e.Property(x => x.Codec).HasMaxLength(64);
+            e.Property(x => x.ParseStatus).HasMaxLength(64);
+            e.HasOne(x => x.Track).WithMany().HasForeignKey(x => x.TrackId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<OriginalTagSnapshot>(e =>
+        {
+            e.HasIndex(x => x.FileRevisionId).IsUnique();
+            e.Property(x => x.Title).HasMaxLength(512);
+            e.Property(x => x.Album).HasMaxLength(512);
+            e.Property(x => x.Artist).HasMaxLength(512);
+            e.Property(x => x.AlbumArtist).HasMaxLength(512);
+            e.Property(x => x.Genre).HasMaxLength(256);
+            e.Property(x => x.FullDate).HasMaxLength(64);
+            e.Property(x => x.Isrc).HasMaxLength(32);
+            e.Property(x => x.Barcode).HasMaxLength(64);
+            e.Property(x => x.CatalogNumber).HasMaxLength(128);
+            e.Property(x => x.MusicBrainzRecordingId).HasMaxLength(64);
+            e.Property(x => x.MusicBrainzReleaseId).HasMaxLength(64);
+            e.Property(x => x.MusicBrainzReleaseGroupId).HasMaxLength(64);
+            e.Property(x => x.RawFieldsJson).HasMaxLength(8000);
+            e.Property(x => x.ParserVersion).HasMaxLength(128);
+            e.HasOne(x => x.FileRevision).WithMany().HasForeignKey(x => x.FileRevisionId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AcousticFingerprint>(e =>
+        {
+            e.HasIndex(x => x.FileRevisionId);
+            e.HasIndex(x => x.FingerprintDigest);
+            e.Property(x => x.Algorithm).HasMaxLength(64);
+            e.Property(x => x.ToolVersion).HasMaxLength(128);
+            e.Property(x => x.FingerprintDigest).HasMaxLength(128);
+            e.Property(x => x.Error).HasMaxLength(1024);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+            e.HasOne(x => x.FileRevision).WithMany().HasForeignKey(x => x.FileRevisionId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<IdentificationJob>(e =>
+        {
+            e.HasIndex(x => new { x.LibraryRootId, x.Status });
+            e.HasIndex(x => x.ClientRequestKey).IsUnique();
+            e.Property(x => x.ClientRequestKey).HasMaxLength(128);
+            e.Property(x => x.SelectionMode).HasMaxLength(32);
+            e.Property(x => x.SelectionJson).HasMaxLength(8000);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.Stage).HasMaxLength(64);
+            e.Property(x => x.LeaseOwner).HasMaxLength(128);
+            e.Property(x => x.LastCheckpoint).HasMaxLength(512);
+            e.Property(x => x.ErrorSummary).HasMaxLength(2048);
+            e.HasOne(x => x.LibraryRoot).WithMany().HasForeignKey(x => x.LibraryRootId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<IdentificationWorkItem>(e =>
+        {
+            e.HasIndex(x => new { x.JobId, x.Status });
+            e.HasIndex(x => x.TrackId);
+            e.HasIndex(x => x.NextRetryUtc);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.Stage).HasMaxLength(64);
+            e.Property(x => x.LeaseOwner).HasMaxLength(128);
+            e.Property(x => x.LastError).HasMaxLength(1024);
+            e.Property(x => x.ErrorCategory).HasConversion<string>().HasMaxLength(32);
+            e.HasOne(x => x.Job).WithMany(j => j.WorkItems).HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ProviderCacheEntry>(e =>
+        {
+            e.HasIndex(x => new { x.Provider, x.CacheKeyDigest, x.QueryShape }).IsUnique();
+            e.Property(x => x.Provider).HasMaxLength(64);
+            e.Property(x => x.CacheKeyDigest).HasMaxLength(128);
+            e.Property(x => x.QueryShape).HasMaxLength(512);
+            e.Property(x => x.ResponseJson).HasMaxLength(200000);
+            e.Property(x => x.SchemaVersion).HasMaxLength(32);
+        });
+
+        builder.Entity<RecordingCandidate>(e =>
+        {
+            e.HasIndex(x => x.WorkItemId);
+            e.HasIndex(x => x.MusicBrainzRecordingId);
+            e.Property(x => x.Provider).HasMaxLength(64);
+            e.Property(x => x.AcoustId).HasMaxLength(64);
+            e.Property(x => x.MusicBrainzRecordingId).HasMaxLength(64);
+            e.Property(x => x.Title).HasMaxLength(512);
+            e.Property(x => x.Artist).HasMaxLength(512);
+            e.Property(x => x.ConfidenceBand).HasMaxLength(32);
+            e.Property(x => x.ScoringVersion).HasMaxLength(64);
+            e.Property(x => x.ScoringBreakdownJson).HasMaxLength(8000);
+            e.Property(x => x.Conflicts).HasMaxLength(2048);
+            e.Property(x => x.Provenance).HasMaxLength(1024);
+            e.HasOne(x => x.WorkItem).WithMany().HasForeignKey(x => x.WorkItemId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AlbumGroup>(e =>
+        {
+            e.HasIndex(x => new { x.JobId, x.GroupKey });
+            e.Property(x => x.GroupKey).HasMaxLength(512);
+            e.Property(x => x.EvidenceJson).HasMaxLength(8000);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.HasOne(x => x.Job).WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AlbumGroupMember>(e =>
+        {
+            e.HasIndex(x => x.GroupId);
+            e.HasIndex(x => x.TrackId);
+            e.HasOne(x => x.Group).WithMany(g => g.Members).HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ReleaseCandidate>(e =>
+        {
+            e.HasIndex(x => x.GroupId);
+            e.HasIndex(x => x.MusicBrainzReleaseId);
+            e.Property(x => x.MusicBrainzReleaseId).HasMaxLength(64);
+            e.Property(x => x.MusicBrainzReleaseGroupId).HasMaxLength(64);
+            e.Property(x => x.Title).HasMaxLength(512);
+            e.Property(x => x.Artist).HasMaxLength(512);
+            e.Property(x => x.Date).HasMaxLength(32);
+            e.Property(x => x.Country).HasMaxLength(16);
+            e.Property(x => x.Label).HasMaxLength(256);
+            e.Property(x => x.CatalogNumber).HasMaxLength(128);
+            e.Property(x => x.Barcode).HasMaxLength(64);
+            e.Property(x => x.Status).HasMaxLength(64);
+            e.Property(x => x.Format).HasMaxLength(64);
+            e.Property(x => x.ScoringBreakdownJson).HasMaxLength(8000);
+            e.Property(x => x.AmbiguitySetId).HasMaxLength(128);
+            e.Property(x => x.ScoringVersion).HasMaxLength(64);
+            e.Property(x => x.Provenance).HasMaxLength(1024);
+            e.HasOne(x => x.Group).WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<MetadataProposal>(e =>
+        {
+            e.HasIndex(x => new { x.JobId, x.Status });
+            e.HasIndex(x => new { x.TrackId, x.Status });
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.FieldMask).HasMaxLength(512);
+            e.Property(x => x.OldTitle).HasMaxLength(512);
+            e.Property(x => x.NewTitle).HasMaxLength(512);
+            e.Property(x => x.OldArtist).HasMaxLength(512);
+            e.Property(x => x.NewArtist).HasMaxLength(512);
+            e.Property(x => x.OldAlbum).HasMaxLength(512);
+            e.Property(x => x.NewAlbum).HasMaxLength(512);
+            e.Property(x => x.EvidenceSnapshotJson).HasMaxLength(8000);
+            e.Property(x => x.ConcurrencyToken).HasMaxLength(64);
+            e.HasOne(x => x.Job).WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<IdentificationError>(e =>
+        {
+            e.HasIndex(x => x.JobId);
+            e.HasIndex(x => x.WorkItemId);
+            e.Property(x => x.Subsystem).HasMaxLength(128);
+            e.Property(x => x.Category).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.Message).HasMaxLength(1024);
+        });
+
+        builder.Entity<ChangeJournal>(e =>
+        {
+            e.HasIndex(x => x.TrackId);
+            e.HasIndex(x => x.ProposalId);
+            e.Property(x => x.OldPath).HasMaxLength(2048);
+            e.Property(x => x.NewPath).HasMaxLength(2048);
+            e.Property(x => x.OldTagSnapshotJson).HasMaxLength(8000);
+            e.Property(x => x.NewTagSnapshotJson).HasMaxLength(8000);
+            e.Property(x => x.OldSha256).HasMaxLength(128);
+            e.Property(x => x.NewSha256).HasMaxLength(128);
+            e.Property(x => x.StepsAttemptedJson).HasMaxLength(4000);
+            e.Property(x => x.StepsCompletedJson).HasMaxLength(4000);
+            e.Property(x => x.Error).HasMaxLength(2048);
+        });
+
+        // ── Server settings (admin-managed secrets) ──
+        builder.Entity<ServerSetting>(e =>
+        {
+            e.HasIndex(x => x.Key).IsUnique();
+            e.Property(x => x.Key).HasMaxLength(128);
+            e.Property(x => x.EncryptedValue).HasMaxLength(2048);
+        });
+
+        // ── Approved exact releases (backlog U01) ──
+        // Album rows stay title-plus-artist; editions live here so two
+        // editions never collapse and ambiguous music simply links nothing.
+        builder.Entity<CatalogRelease>(e =>
+        {
+            e.HasIndex(x => x.AlbumId);
+            e.HasIndex(x => x.MusicBrainzReleaseId);
+            e.Property(x => x.Title).HasMaxLength(512);
+            e.Property(x => x.ArtistName).HasMaxLength(512);
+            e.Property(x => x.MusicBrainzReleaseId).HasMaxLength(64);
+            e.Property(x => x.MusicBrainzReleaseGroupId).HasMaxLength(64);
+            e.Property(x => x.Date).HasMaxLength(32);
+            e.Property(x => x.Country).HasMaxLength(16);
+            e.Property(x => x.Label).HasMaxLength(256);
+            e.Property(x => x.CatalogNumber).HasMaxLength(128);
+            e.Property(x => x.Barcode).HasMaxLength(64);
+            e.Property(x => x.Status).HasMaxLength(64);
+            e.Property(x => x.Format).HasMaxLength(64);
+            e.HasOne(x => x.Album).WithMany().HasForeignKey(x => x.AlbumId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Approved catalog overrides (backlog U04) ──
+        // One active row per track and field. Clearing deletes the row;
+        // history stays in the proposal and change journal.
+        builder.Entity<CatalogOverride>(e =>
+        {
+            e.HasIndex(x => new { x.TrackId, x.Field }).IsUnique();
+            e.Property(x => x.Field).HasMaxLength(64);
+            e.Property(x => x.ValueText).HasMaxLength(512);
+            e.Property(x => x.SourceFingerprintDigest).HasMaxLength(128);
+            e.HasOne(x => x.Track).WithMany().HasForeignKey(x => x.TrackId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

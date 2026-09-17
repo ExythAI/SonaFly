@@ -133,7 +133,27 @@ public class SystemController : ControllerBase
 
             await _db.TrackGenres.ExecuteDeleteAsync(ct);
             await _db.TrackArtists.ExecuteDeleteAsync(ct);
+
+            // Music identification analysis rows belong to the purged library
+            // and go with it (review backlog U05). Children first so direct
+            // deletes never trip a foreign key. The change journal is
+            // deliberately kept: it is self-contained audit with plain IDs,
+            // and the provider cache is global rather than library-scoped.
+            await _db.RecordingCandidates.ExecuteDeleteAsync(ct);
+            await _db.ReleaseCandidates.ExecuteDeleteAsync(ct);
+            await _db.AlbumGroupMembers.ExecuteDeleteAsync(ct);
+            await _db.MetadataProposals.ExecuteDeleteAsync(ct);
+            await _db.IdentificationWorkItems.ExecuteDeleteAsync(ct);
+            await _db.AlbumGroups.ExecuteDeleteAsync(ct);
+            await _db.IdentificationJobs.ExecuteDeleteAsync(ct);
+            await _db.IdentificationErrors.ExecuteDeleteAsync(ct);
+            await _db.AcousticFingerprints.ExecuteDeleteAsync(ct);
+            await _db.OriginalTagSnapshots.ExecuteDeleteAsync(ct);
+            await _db.CatalogOverrides.ExecuteDeleteAsync(ct);
+            await _db.TrackFileRevisions.ExecuteDeleteAsync(ct);
+
             await _db.Tracks.ExecuteDeleteAsync(ct);
+            await _db.CatalogReleases.ExecuteDeleteAsync(ct);
             await _db.Albums.ExecuteDeleteAsync(ct);
             await _db.Artists.ExecuteDeleteAsync(ct);
             await _db.Genres.ExecuteDeleteAsync(ct);

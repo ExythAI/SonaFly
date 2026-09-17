@@ -2,11 +2,61 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Alert, Box, Typography, Card, CardContent, Button, TextField, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Chip, Stack, Menu, MenuItem } from '@mui/material';
 import { Add, Delete, FolderOpen, Refresh, MoreVert } from '@mui/icons-material';
-import { libraryRootsApi } from '../api/client';
+import { libraryRootsApi, identificationApi, settingsApi } from '../api/client';
 import { useConfirm, errorMessage } from '../components/Feedback';
 import { PageHeader, PageLoading, QueryError, EmptyState } from '../components/PageParts';
 
 type Folder = { id: string; name: string; path: string; isEnabled: boolean; lastScanStatus?: string; lastScanCompletedUtc?: string; lastScanError?: string };
+
+function IdentificationCard() {
+    const qc = useQueryClient();
+    const confirm = useConfirm();
+    const status = useQuery({ queryKey: ['identification-status'], queryFn: () => identificationApi.status().then(r => r.data) });
+    const [keyInput, setKeyInput] = useState('');
+    const refresh = () => { qc.invalidateQueries({ queryKey: ['identification-status'] }); };
+    const saveKey = useMutation({
+        mutationFn: () => settingsApi.saveAcoustIdKey(keyInput.trim()),
+        meta: { successMessage: 'AcoustID key saved. Online lookups are now available.' },
+        onSuccess: () => { setKeyInput(''); refresh(); },
+    });
+    const clearKey = useMutation({
+        mutationFn: () => settingsApi.clearAcoustIdKey(),
+        meta: { successMessage: 'Stored key cleared. The configuration file value applies again.' },
+        onSuccess: refresh,
+    });
+    const clearStoredKey = async () => {
+        if (await confirm({ title: 'Clear the stored AcoustID key?', description: 'The server will fall back to the key from its configuration file, if one is set. Online lookups stop working if neither is configured.', action: 'Clear key' })) clearKey.mutate();
+    };
+    const data = status.data;
+    return <Card sx={{ mb: 2 }}><CardContent>
+        <Typography variant="h6">Music identification</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Analyse tracks against AcoustID and MusicBrainz. The key is stored encrypted on the server and never displayed again.
+        </Typography>
+        {status.isLoading ? <PageLoading /> : status.isError ? <QueryError error={status.error} retry={status.refetch} /> : data && <>
+            <Stack direction="row" gap={1} sx={{ mb: 1, flexWrap: 'wrap' }}>
+                <Chip size="small" label={data.enabled ? 'Enabled' : 'Disabled'} color={data.enabled ? 'success' : 'default'} />
+                <Chip size="small" label={data.acoustIdConfigured ? `AcoustID key set (${data.acoustIdSource})` : 'No AcoustID key'} color={data.acoustIdConfigured ? 'success' : 'warning'} />
+                {data.localOnlyMode && <Chip size="small" label="Local-only mode" color="warning" />}
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{data.message}</Typography>
+            {data.blockers.map(b => <Alert key={b} severity="warning" sx={{ mt: 1 }}>{b}</Alert>)}
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }} sx={{ mt: 2 }}>
+                <TextField fullWidth type="password" autoComplete="new-password" label="AcoustID client key"
+                    value={keyInput} onChange={e => { saveKey.reset(); setKeyInput(e.target.value); }}
+                    placeholder={data.acoustIdConfigured ? 'Key is set — enter a new one to replace it' : 'Paste the key from acoustid.org'}
+                    helperText="Saved encrypted. To use a configuration-file key instead, clear the stored one." />
+                <Stack direction="row" gap={1} sx={{ whiteSpace: 'nowrap' }}>
+                    <Button variant="contained" disabled={saveKey.isPending || !keyInput.trim()}
+                        onClick={() => saveKey.mutate()}>{saveKey.isPending ? 'Saving…' : 'Save key'}</Button>
+                    <Button variant="outlined" color="warning" disabled={clearKey.isPending || !data.acoustIdConfigured || data.acoustIdSource !== 'Database'}
+                        onClick={() => void clearStoredKey()}>Clear</Button>
+                </Stack>
+            </Stack>
+            {saveKey.isError && <Alert severity="error" sx={{ mt: 2 }}>{errorMessage(saveKey.error)}</Alert>}
+        </>}
+    </CardContent></Card>;
+}
 export default function LibraryRootsPage() {
     const qc = useQueryClient();
     const confirm = useConfirm();
@@ -25,6 +75,7 @@ export default function LibraryRootsPage() {
     return <Box>
         <PageHeader title="Music folders" subtitle="Choose where SonaFly finds your music. Your original files stay on disk."
             action={<Button variant="contained" startIcon={<Add />} onClick={() => { create.reset(); setOpen(true); }}>Add music folder</Button>} />
+        <IdentificationCard />
         {roots.isLoading ? <PageLoading /> : roots.isError ? <QueryError error={roots.error} retry={roots.refetch} /> : roots.data?.length === 0 ?
             <EmptyState title="Your collection starts here" description="Add a folder that this server can access, then scan it to discover albums and tracks." action={<Button onClick={() => setOpen(true)} startIcon={<Add />}>Add music folder</Button>} /> :
             <Stack spacing={2}>{roots.data?.map(folder => <Card key={folder.id}><CardContent>

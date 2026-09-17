@@ -57,9 +57,9 @@ public class LibraryScanBackgroundService : BackgroundService
     {
         // Take the library slot. Maintenance (a purge) cancels the lease token, so a scan can
         // never repopulate data an admin is in the middle of deleting (backlog N16).
-        using var lease = await _gate.AcquireForScanAsync(stoppingToken);
+        using var lease = await _gate.AcquireForScanAsync(request.LibraryRootId, stoppingToken);
 
-        if (_gate.MaintenancePending || lease.Token.IsCancellationRequested)
+        if (_gate.MaintenancePending || _gate.IsRootPendingDeletion(request.LibraryRootId) || lease.Token.IsCancellationRequested)
         {
             await AbandonJobAsync(request.ScanJobId,
                 "Scan abandoned: library maintenance is in progress.", stoppingToken);

@@ -10,10 +10,12 @@ namespace SonaFlyUI.Server.Infrastructure.Services;
 public class LibraryRootService : ILibraryRootService
 {
     private readonly SonaFlyDbContext _db;
+    private readonly LibraryMaintenanceGate _gate;
 
-    public LibraryRootService(SonaFlyDbContext db)
+    public LibraryRootService(SonaFlyDbContext db, LibraryMaintenanceGate gate)
     {
         _db = db;
+        _gate = gate;
     }
 
     public async Task<IReadOnlyList<LibraryRootDto>> GetAllAsync(CancellationToken ct)
@@ -98,13 +100,40 @@ public class LibraryRootService : ILibraryRootService
         await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Deletes a library root under a root-scoped lease (review backlog U02).
+    /// Previously this bypassed <see cref="LibraryMaintenanceGate"/> entirely,
+    /// so a concurrent scan could repopulate rows for a root being deleted.
+    /// Only a scan of this root is interrupted; scans of other roots continue.
+    /// The delete cascades the root's jobs, work items, and candidates.
+    /// Identification errors carry plain IDs, so they are removed explicitly;
+    /// the change journal (plain IDs, no FK) is retained as audit.
+    /// </summary>
     public async Task DeleteAsync(Guid id, CancellationToken ct)
     {
+        // Check first so an unknown ID never disturbs a running scan.
+        if (await _db.LibraryRoots.AnyAsync(lr => lr.Id == id, ct) == false)
+        {
+            throw new KeyNotFoundException($"Library root {id} not found.");
+        }
+
+        using var deletion = await _gate.AcquireForRootDeletionAsync(id, ct);
+
         var entity = await _db.LibraryRoots.FindAsync([id], ct)
             ?? throw new KeyNotFoundException($"Library root {id} not found.");
 
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+
+        var jobIds = _db.IdentificationJobs.Where(j => j.LibraryRootId == id).Select(j => j.Id);
+        var workItemIds = _db.IdentificationWorkItems.Where(w => jobIds.Contains(w.JobId)).Select(w => w.Id);
+        await _db.IdentificationErrors
+            .Where(e => (e.JobId != null && jobIds.Contains(e.JobId.Value)) ||
+                        (e.WorkItemId != null && workItemIds.Contains(e.WorkItemId.Value)))
+            .ExecuteDeleteAsync(ct);
+
         _db.LibraryRoots.Remove(entity);
         await _db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
     }
 
     private static LibraryRootDto MapToDto(LibraryRoot lr) => new(
