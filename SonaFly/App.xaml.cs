@@ -36,7 +36,10 @@ namespace SonaFly
             }
             else
             {
-                startPage = new AppShell();
+                // The shell is the window root, as it is after signing in. Wrapped in a
+                // NavigationPage it is not Shell.Current, and opening a detail page from
+                // a session restored at startup would have nowhere to go.
+                return new Window(new AppShell());
             }
 
             return new Window(new NavigationPage(startPage)

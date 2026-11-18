@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:controls="clr-namespace:SonaFly.Views.Controls"
+             x:Class="SonaFly.Views.ArtistAlbumsPage"
+             Title="{Binding Title}"
+             BackgroundColor="#0D0D1A">
+
+    <Grid RowDefinitions="*,Auto" Padding="16,16,16,0">
+        <CollectionView x:Name="AlbumsList" ItemsSource="{Binding Albums.Items}" SelectionMode="Single"
+                        RemainingItemsThreshold="12"
+                        RemainingItemsThresholdReachedCommand="{Binding LoadMoreCommand}">
+            <CollectionView.ItemsLayout>
+                <GridItemsLayout Orientation="Vertical" Span="2" HorizontalItemSpacing="8" VerticalItemSpacing="8" />
+            </CollectionView.ItemsLayout>
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 10" Stroke="Transparent" Padding="0">
+                        <VerticalStackLayout>
+                            <Image Source="{Binding ArtworkId, Converter={StaticResource ArtworkUrlConverter}}"
+                                   HeightRequest="130" Aspect="AspectFill" BackgroundColor="#252540" />
+                            <VerticalStackLayout Padding="10,8">
+                                <Label Text="{Binding Title}" FontSize="13" FontAttributes="Bold" TextColor="#E8EAED" LineBreakMode="TailTruncation" MaxLines="1" />
+                                <Label Text="{Binding ArtistName}" FontSize="11" TextColor="#9AA0A6" LineBreakMode="TailTruncation" MaxLines="1" />
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+                    </Border>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" VerticalOptions="Center" />
+
+        <controls:ErrorBanner />
+
+        <!-- Controls only: the audio stays with the tab page underneath. -->
+        <controls:MiniPlayerControl x:Name="MiniPlayer" Grid.Row="1" HostsPlayback="False" />
+    </Grid>
+</ContentPage>

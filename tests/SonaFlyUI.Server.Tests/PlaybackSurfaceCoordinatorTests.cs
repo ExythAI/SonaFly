@@ -113,4 +113,27 @@ public sealed class PlaybackSurfaceCoordinatorTests
     {
         Assert.Null(new PlaybackSurfaceCoordinator().ResolveLoader(1));
     }
+
+    [Fact]
+    public void TheFirstStreamStartedFromADetailPageLoadsOnTheTabUnderneath()
+    {
+        // Browse was on screen, then a detail page covered it. Detail pages hold no
+        // surface, so nothing is visible when the first track is chosen there.
+        _coordinator.MarkVisible(_browse);
+        _coordinator.MarkHidden(_browse);
+
+        Assert.Same(_browse, _coordinator.ResolveLoader(1));
+    }
+
+    [Fact]
+    public void ADetailPageOnAnotherTabLeavesPlaybackWithItsOwner()
+    {
+        _coordinator.MarkVisible(_home);
+        _coordinator.ResolveLoader(1);
+        _coordinator.MarkHidden(_home);
+        _coordinator.MarkVisible(_browse);
+        _coordinator.MarkHidden(_browse);
+
+        Assert.Same(_home, _coordinator.ResolveLoader(2));
+    }
 }

@@ -5,43 +5,40 @@ using SonaFly.Services;
 
 namespace SonaFly.ViewModels;
 
+/// <summary>
+/// The Playlists tab: the lists of playlists and mixed tapes, and the form that
+/// creates a playlist. Each playlist and tape opens as a page of its own.
+/// </summary>
 public partial class PlaylistsViewModel : LibraryViewModelBase
 {
     private readonly SonaFlyApiClient _api;
-    private readonly AudioPlayerService _player;
 
     [ObservableProperty] private List<PlaylistDto> _playlists = [];
     [ObservableProperty] private List<MixedTapeDto> _mixedTapes = [];
-    [ObservableProperty] private PlaylistDto? _selectedPlaylist;
-    [ObservableProperty] private MixedTapeDto? _selectedMixedTape;
 
     [ObservableProperty] private bool _showList = true;
-    [ObservableProperty] private bool _showPlaylistDetail;
-    [ObservableProperty] private bool _showMixedTapeDetail;
     [ObservableProperty] private bool _showCreateForm;
 
     // Create form fields
     [ObservableProperty] private string _newPlaylistName = string.Empty;
     [ObservableProperty] private string _newPlaylistDescription = string.Empty;
 
-    public PlaylistsViewModel(SonaFlyApiClient api, AudioPlayerService player)
+    public PlaylistsViewModel(SonaFlyApiClient api) => _api = api;
+
+    private void ShowForm(bool form)
     {
-        _api = api;
-        _player = player;
+        ShowCreateForm = form;
+        ShowList = form == false;
     }
 
-    private void SetView(string mode)
-    {
-        ShowList = mode == "list";
-        ShowPlaylistDetail = mode == "playlistDetail";
-        ShowMixedTapeDetail = mode == "mixedTapeDetail";
-        ShowCreateForm = mode == "create";
-    }
-
+    /// <summary>
+    /// Refreshes the lists, as on every return to this tab. A half-filled create form
+    /// stays open.
+    /// </summary>
     [RelayCommand]
     private Task LoadAsync() => RunAsync("Couldn't load playlists.", RefreshAsync);
 
-    /// <summary>Fetches both lists and shows them. Throws when either request fails.</summary>
+    /// <summary>Fetches both lists. Throws when either request fails.</summary>
     private async Task RefreshAsync()
     {
         var playlistsTask = _api.GetPlaylistsAsync();
@@ -49,29 +46,18 @@ public partial class PlaylistsViewModel : LibraryViewModelBase
         await Task.WhenAll(playlistsTask, tapesTask);
         Playlists = (await playlistsTask) ?? [];
         MixedTapes = (await tapesTask) ?? [];
-        SetView("list");
     }
 
     [RelayCommand]
     private async Task SelectPlaylistAsync(PlaylistDto? playlist)
     {
-        if (playlist == null) return;
-        await RunAsync($"Couldn't open {playlist.Name}.", async () =>
-        {
-            SelectedPlaylist = await _api.GetPlaylistByIdAsync(playlist.Id.ToString());
-            SetView("playlistDetail");
-        });
+        if (playlist != null) await LibraryNavigator.OpenPlaylistAsync(playlist.Id, playlist.Name);
     }
 
     [RelayCommand]
     private async Task SelectMixedTapeAsync(MixedTapeDto? tape)
     {
-        if (tape == null) return;
-        await RunAsync($"Couldn't open {tape.Name}.", async () =>
-        {
-            SelectedMixedTape = await _api.GetMixedTapeByIdAsync(tape.Id.ToString());
-            SetView("mixedTapeDetail");
-        });
+        if (tape != null) await LibraryNavigator.OpenMixedTapeAsync(tape.Id, tape.Name);
     }
 
     [RelayCommand]
@@ -79,7 +65,7 @@ public partial class PlaylistsViewModel : LibraryViewModelBase
     {
         NewPlaylistName = string.Empty;
         NewPlaylistDescription = string.Empty;
-        SetView("create");
+        ShowForm(true);
     }
 
     [RelayCommand]
@@ -94,48 +80,10 @@ public partial class PlaylistsViewModel : LibraryViewModelBase
 
         NewPlaylistName = string.Empty;
         NewPlaylistDescription = string.Empty;
+        ShowForm(false);
         await RunAsync("The playlist was created, but the list couldn't be refreshed.", RefreshAsync);
     }
 
     [RelayCommand]
-    private async Task DeletePlaylistAsync()
-    {
-        if (SelectedPlaylist is not { } playlist) return;
-
-        var deleted = await RunAsync($"Couldn't delete {playlist.Name}.", () =>
-            _api.DeletePlaylistAsync(playlist.Id));
-        if (deleted == false) return;
-
-        await RunAsync("The playlist was deleted, but the list couldn't be refreshed.", RefreshAsync);
-    }
-
-    [RelayCommand]
-    private void PlayPlaylistTrack(PlaylistItemDto? item)
-    {
-        if (item == null || SelectedPlaylist?.Items == null) return;
-        var queue = SelectedPlaylist.Items.Select(i => new TrackDto(
-            i.TrackId, i.TrackTitle, i.ArtistName, i.AlbumTitle,
-            null, null, null, i.DurationSeconds, null, null
-        )).ToList();
-        var track = queue.FirstOrDefault(t => t.Id == item.TrackId);
-        if (track != null) _player.Play(track, queue);
-    }
-
-    [RelayCommand]
-    private void PlayMixedTapeTrack(MixedTapeItemDto? item)
-    {
-        if (item == null || SelectedMixedTape?.Items == null) return;
-        var queue = SelectedMixedTape.Items.Select(i => new TrackDto(
-            i.TrackId, i.TrackTitle, i.ArtistName, i.AlbumTitle,
-            i.AlbumId, null, null, i.DurationSeconds, i.ArtworkId, null
-        )).ToList();
-        var track = queue.FirstOrDefault(t => t.Id == item.TrackId);
-        if (track != null) _player.Play(track, queue);
-    }
-
-    [RelayCommand]
-    private void GoBack() => SetView("list");
-
-    [RelayCommand]
-    private void CancelCreate() => SetView("list");
+    private void CancelCreate() => ShowForm(false);
 }

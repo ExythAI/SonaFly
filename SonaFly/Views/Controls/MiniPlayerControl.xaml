@@ -5,7 +5,7 @@
              x:Class="SonaFly.Views.Controls.MiniPlayerControl"
              IsVisible="{Binding IsVisible, Source={RelativeSource Self}}">
 
-    <Grid RowDefinitions="Auto,Auto" BackgroundColor="#12121E">
+    <Grid x:Name="RootGrid" RowDefinitions="Auto,Auto" BackgroundColor="#12121E">
         <!-- Mini player bar -->
         <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 0" Stroke="Transparent" Padding="12,8"
                 IsVisible="{Binding HasTrack}">

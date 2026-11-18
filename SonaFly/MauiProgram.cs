@@ -47,6 +47,10 @@ namespace SonaFly
             builder.Services.AddTransient<SearchViewModel>();
             builder.Services.AddTransient<AuditoriumViewModel>();
             builder.Services.AddTransient<SettingsViewModel>();
+            builder.Services.AddTransient<AlbumDetailViewModel>();
+            builder.Services.AddTransient<ArtistAlbumsViewModel>();
+            builder.Services.AddTransient<PlaylistDetailViewModel>();
+            builder.Services.AddTransient<MixedTapeDetailViewModel>();
 
             // Pages
             builder.Services.AddTransient<ServerSetupPage>();
@@ -57,6 +61,10 @@ namespace SonaFly
             builder.Services.AddTransient<SearchPage>();
             builder.Services.AddTransient<AuditoriumPage>();
             builder.Services.AddTransient<SettingsPage>();
+            builder.Services.AddTransient<AlbumDetailPage>();
+            builder.Services.AddTransient<ArtistAlbumsPage>();
+            builder.Services.AddTransient<PlaylistDetailPage>();
+            builder.Services.AddTransient<MixedTapeDetailPage>();
 
 #if DEBUG
             builder.Logging.AddDebug();

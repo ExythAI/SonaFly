@@ -15,8 +15,8 @@ public partial class PlaylistsPage : ContentPage
         BindingContext = _vm = vm;
         _player = player;
 
-        PlaylistTracksList.SelectionChanged += (_, _) => SelectionHelper.ClearAfterDelay(PlaylistTracksList);
-        MixedTapeTracksList.SelectionChanged += (_, _) => SelectionHelper.ClearAfterDelay(MixedTapeTracksList);
+        SelectionHelper.OpenOnTap(PlaylistsList, vm.SelectPlaylistCommand);
+        SelectionHelper.OpenOnTap(MixedTapesList, vm.SelectMixedTapeCommand);
     }
 
     protected override async void OnAppearing()
@@ -31,5 +31,20 @@ public partial class PlaylistsPage : ContentPage
     {
         base.OnDisappearing();
         MiniPlayer.Deactivate();
+    }
+
+    /// <summary>
+    /// The create form is part of this page, so the system back button closes the form
+    /// rather than leaving the tab.
+    /// </summary>
+    protected override bool OnBackButtonPressed()
+    {
+        if (_vm.ShowCreateForm)
+        {
+            _vm.CancelCreateCommand.Execute(null);
+            return true;
+        }
+
+        return base.OnBackButtonPressed();
     }
 }

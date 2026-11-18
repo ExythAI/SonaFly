@@ -1,5 +1,4 @@
 using SonaFly.Helpers;
-using SonaFly.Models;
 using SonaFly.Services;
 using SonaFly.ViewModels;
 
@@ -9,22 +8,15 @@ public partial class BrowsePage : ContentPage
 {
     private readonly BrowseViewModel _vm;
     private readonly AudioPlayerService _player;
-    private readonly PlaylistPickerService _playlistPicker;
 
-    public BrowsePage(BrowseViewModel vm, AudioPlayerService player, PlaylistPickerService playlistPicker)
+    public BrowsePage(BrowseViewModel vm, AudioPlayerService player)
     {
         InitializeComponent();
         BindingContext = _vm = vm;
         _player = player;
-        _playlistPicker = playlistPicker;
 
-        TracksList.SelectionChanged += (_, _) => SelectionHelper.ClearAfterDelay(TracksList);
-    }
-
-    private async void OnAddToPlaylistClicked(object? sender, EventArgs e)
-    {
-        if (sender is Button btn && btn.CommandParameter is TrackDto track)
-            await _playlistPicker.ShowAndAddTrackAsync(this, track);
+        SelectionHelper.OpenOnTap(ArtistsList, vm.SelectArtistCommand);
+        SelectionHelper.OpenOnTap(AlbumsList, vm.SelectAlbumCommand);
     }
 
     protected override async void OnAppearing()
@@ -32,7 +24,10 @@ public partial class BrowsePage : ContentPage
         base.OnAppearing();
         MiniPlayer.Initialize(_player);
         MiniPlayer.Activate();
-        if (_vm.Artists.Items.Count == 0)
+
+        // Also runs on the way back from an artist or album, where it retries a load
+        // that failed but leaves a list the user was looking at alone.
+        if (_vm.ShowArtists && _vm.Artists.Items.Count == 0)
             await _vm.LoadArtistsCommand.ExecuteAsync(null);
     }
 

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:controls="clr-namespace:SonaFly.Views.Controls"
+             x:Class="SonaFly.Views.MixedTapeDetailPage"
+             Title="{Binding Title}"
+             BackgroundColor="#0D0D1A">
+
+    <Grid RowDefinitions="*,Auto" Padding="16,16,16,0">
+        <ScrollView>
+            <VerticalStackLayout Spacing="4">
+                <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,12">
+                    <Image Source="mixedtape.png" HeightRequest="48" Aspect="AspectFit" />
+                    <Label Grid.Column="1" Text="{Binding Title}" FontSize="22" FontAttributes="Bold" TextColor="#FF6B6B" VerticalTextAlignment="Center" Margin="12,0,0,0" />
+                </Grid>
+                <CollectionView x:Name="TracksList" ItemsSource="{Binding MixedTape.Items}" SelectionMode="Single"
+                                SelectionChangedCommand="{Binding PlayTrackCommand}"
+                                SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Border BackgroundColor="Transparent" Stroke="Transparent" Padding="10,8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <VerticalStackLayout>
+                                        <Label Text="{Binding TrackTitle}" FontSize="14" TextColor="#E8EAED" LineBreakMode="TailTruncation" MaxLines="1" />
+                                        <Label Text="{Binding ArtistName}" FontSize="11" TextColor="#9AA0A6" />
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="1" Text="▶" FontSize="14" TextColor="#FF6B6B" VerticalTextAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" VerticalOptions="Center" />
+
+        <controls:ErrorBanner />
+
+        <!-- Controls only: the audio stays with the tab page underneath. -->
+        <controls:MiniPlayerControl x:Name="MiniPlayer" Grid.Row="1" HostsPlayback="False" />
+    </Grid>
+</ContentPage>

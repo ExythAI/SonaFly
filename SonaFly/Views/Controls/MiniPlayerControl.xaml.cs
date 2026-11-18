@@ -27,6 +27,24 @@ public partial class MiniPlayerControl : ContentView
     /// </summary>
     private bool OwnsPlayback => _player?.Surfaces.IsOwner(this) == true;
 
+    private bool _hostsPlayback = true;
+
+    /// <summary>
+    /// False on pages that are pushed and closed again, such as an album's. Such a page
+    /// shows the controls but plays nothing itself: its media element would be torn down
+    /// with the page, and the audio with it. Playback stays with a tab page's control,
+    /// which lives as long as the app. Set in XAML, before the control is shown.
+    /// </summary>
+    public bool HostsPlayback
+    {
+        get => _hostsPlayback;
+        set
+        {
+            _hostsPlayback = value;
+            if (value == false) RootGrid.Children.Remove(Player);
+        }
+    }
+
     public void Initialize(AudioPlayerService player)
     {
         if (_initialized) return;
@@ -36,6 +54,9 @@ public partial class MiniPlayerControl : ContentView
         _vm = new MiniPlayerViewModel(player);
         BindingContext = _vm;
 
+        if (_hostsPlayback == false) return;
+
+        _vm.Attach();
         _player.Surfaces.Register(this);
         _player.PropertyChanged += OnPlayerPropertyChanged;
         _player.SeekRequested += OnSeekRequested;
@@ -45,12 +66,22 @@ public partial class MiniPlayerControl : ContentView
     /// Call from OnAppearing. The next track to start loads here. Playback already
     /// running on another tab's media element is left alone and stays controllable.
     /// </summary>
-    public void Activate() => _player?.Surfaces.MarkVisible(this);
+    public void Activate()
+    {
+        if (_hostsPlayback) _player?.Surfaces.MarkVisible(this);
+        else _vm?.Attach();
+    }
 
     /// <summary>
     /// Call from OnDisappearing. Does not stop audio or give up ownership of it.
     /// </summary>
-    public void Deactivate() => _player?.Surfaces.MarkHidden(this);
+    public void Deactivate()
+    {
+        if (_hostsPlayback) _player?.Surfaces.MarkHidden(this);
+        // A pushed page must let go of the player, which outlives it, or every page
+        // ever opened would be kept alive by the subscription.
+        else _vm?.Detach();
+    }
 
     private void OnPlayerPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -194,33 +225,54 @@ public partial class MiniPlayerViewModel : ObservableObject
     public MiniPlayerViewModel(AudioPlayerService player)
     {
         _player = player;
-        _player.PropertyChanged += (_, e) =>
+    }
+
+    private bool _attached;
+
+    /// <summary>Starts following the player, and shows where it is right now.</summary>
+    public void Attach()
+    {
+        if (_attached) return;
+        _attached = true;
+        _player.PropertyChanged += OnPlayerChanged;
+        // Everything may have changed while this was not listening.
+        OnPropertyChanged(string.Empty);
+    }
+
+    /// <summary>Stops following the player, so the player no longer holds on to this.</summary>
+    public void Detach()
+    {
+        if (_attached == false) return;
+        _attached = false;
+        _player.PropertyChanged -= OnPlayerChanged;
+    }
+
+    private void OnPlayerChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
         {
-            switch (e.PropertyName)
-            {
-                // Position arrives several times a second; refresh only what it affects.
-                case nameof(AudioPlayerService.Position):
-                    if (IsScrubbing == false)
-                    {
-                        OnPropertyChanged(nameof(SliderPosition));
-                        OnPropertyChanged(nameof(PositionText));
-                    }
-                    break;
-                case nameof(AudioPlayerService.Duration):
-                    OnPropertyChanged(nameof(HasDuration));
-                    OnPropertyChanged(nameof(SliderMaximum));
-                    OnPropertyChanged(nameof(DurationText));
-                    break;
-                default:
-                    OnPropertyChanged(nameof(HasTrack));
-                    OnPropertyChanged(nameof(TrackTitle));
-                    OnPropertyChanged(nameof(ArtistName));
-                    OnPropertyChanged(nameof(ArtworkUrl));
-                    OnPropertyChanged(nameof(HasArtwork));
-                    OnPropertyChanged(nameof(PlayPauseIcon));
-                    break;
-            }
-        };
+            // Position arrives several times a second; refresh only what it affects.
+            case nameof(AudioPlayerService.Position):
+                if (IsScrubbing == false)
+                {
+                    OnPropertyChanged(nameof(SliderPosition));
+                    OnPropertyChanged(nameof(PositionText));
+                }
+                break;
+            case nameof(AudioPlayerService.Duration):
+                OnPropertyChanged(nameof(HasDuration));
+                OnPropertyChanged(nameof(SliderMaximum));
+                OnPropertyChanged(nameof(DurationText));
+                break;
+            default:
+                OnPropertyChanged(nameof(HasTrack));
+                OnPropertyChanged(nameof(TrackTitle));
+                OnPropertyChanged(nameof(ArtistName));
+                OnPropertyChanged(nameof(ArtworkUrl));
+                OnPropertyChanged(nameof(HasArtwork));
+                OnPropertyChanged(nameof(PlayPauseIcon));
+                break;
+        }
     }
 
     public bool HasTrack => _player.CurrentTrack != null;
