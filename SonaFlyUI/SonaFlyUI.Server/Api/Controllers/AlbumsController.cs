@@ -23,7 +23,7 @@ public class AlbumsController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<PaginatedResult<AlbumDto>>> GetAll(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 50,
-        [FromQuery] Guid? artistId = null, CancellationToken ct = default)
+        [FromQuery] Guid? artistId = null, [FromQuery] string? sort = null, CancellationToken ct = default)
     {
         if (!Pagination.TryValidate(page, pageSize, out page, out pageSize, out var pagingError))
             return BadRequest(new { message = pagingError });
@@ -39,9 +39,16 @@ public class AlbumsController : ControllerBase
         if (artistId.HasValue)
             query = query.Where(a => a.AlbumArtistId == artistId.Value);
         var total = await query.CountAsync(ct);
-        var items = await query
-            // Year and title are both non-unique; Id makes the page boundary stable (N20).
-            .OrderBy(a => a.Year ?? int.MaxValue).ThenBy(a => a.SortTitle ?? a.Title).ThenBy(a => a.Id)
+        // Every order ends in Id: the leading columns are non-unique, and without a
+        // tiebreaker a row can repeat on one page and vanish from the next (N20).
+        var ordered = (sort?.ToLowerInvariant()) switch
+        {
+            // Newest additions first: when the album first entered this library.
+            "recent" => query.OrderByDescending(a => a.CreatedUtc).ThenBy(a => a.Id),
+            "title" => query.OrderBy(a => a.SortTitle ?? a.Title).ThenBy(a => a.Id),
+            _ => query.OrderBy(a => a.Year ?? int.MaxValue).ThenBy(a => a.SortTitle ?? a.Title).ThenBy(a => a.Id),
+        };
+        var items = await ordered
             .Skip(Pagination.Offset(page, pageSize))
             .Take(pageSize)
             .Select(a => new AlbumDto(

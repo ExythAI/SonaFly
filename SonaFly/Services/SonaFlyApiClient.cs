@@ -268,8 +268,8 @@ public class SonaFlyApiClient
     public Task<PaginatedResult<ArtistDto>?> GetArtistsAsync(int page = 1, int pageSize = 50) =>
         GetAsync<PaginatedResult<ArtistDto>>($"artists?page={page}&pageSize={pageSize}");
 
-    public Task<PaginatedResult<AlbumDto>?> GetAlbumsAsync(int page = 1, int pageSize = 50, Guid? artistId = null) =>
-        GetAsync<PaginatedResult<AlbumDto>>($"albums?page={page}&pageSize={pageSize}{(artistId.HasValue ? $"&artistId={artistId}" : "")}");
+    public Task<PaginatedResult<AlbumDto>?> GetAlbumsAsync(int page = 1, int pageSize = 50, Guid? artistId = null, string? sort = null) =>
+        GetAsync<PaginatedResult<AlbumDto>>($"albums?page={page}&pageSize={pageSize}{(artistId.HasValue ? $"&artistId={artistId}" : "")}{(sort != null ? $"&sort={sort}" : "")}");
 
     public Task<AlbumDetailDto?> GetAlbumByIdAsync(string id) =>
         GetAsync<AlbumDetailDto>($"albums/{id}");
@@ -308,22 +308,46 @@ public class SonaFlyApiClient
     public Task<MixedTapeDto?> GetMixedTapeByIdAsync(string id) => GetAsync<MixedTapeDto>($"mixed-tapes/{id}");
 
     // ── Helpers ──
-    public string ArtworkUrl(Guid? artworkId) =>
-        artworkId.HasValue ? $"{BaseUrl}/api/artwork/{artworkId}" : string.Empty;
+    /// <summary>A cover scaled to about <paramref name="size"/> pixels; the player and lock screen use this.</summary>
+    public string ArtworkUrl(Guid? artworkId, int size = 640) =>
+        artworkId.HasValue ? $"{BaseUrl}/api/artwork/{artworkId}?size={size}" : string.Empty;
 
-    public async Task<string> GetStreamUrlAsync(Guid trackId, CancellationToken ct = default)
+    /// <summary>
+    /// A playable URL for a track. <paramref name="compressed"/> asks the server for a
+    /// smaller MP3 copy of a lossless file; a server that cannot make one, or an older
+    /// one that ignores the request, returns the original.
+    /// </summary>
+    public async Task<string> GetStreamUrlAsync(Guid trackId, bool compressed = false, CancellationToken ct = default)
     {
         // One snapshot for both the request and the resolution of the relative URL it
         // returns, so the ticket is always played back against the server that issued it.
         var server = ActiveServer();
         var result = await ReadAsync<StreamUrlResponse>(
-                server, HttpMethod.Get, $"stream/tracks/{trackId}/url", null, ct)
+                server, HttpMethod.Get,
+                $"stream/tracks/{trackId}/url{(compressed ? "?quality=compressed" : "")}", null, ct)
             ?? throw new InvalidOperationException("No streaming URL returned.");
 
         return new Uri(new Uri(server.BaseUrl + "/"), result.Url).AbsoluteUri;
     }
 
     private record StreamUrlResponse(string Url);
+
+    /// <summary>
+    /// Tells the server a track started, for its "recently played" and "most played"
+    /// lists. Best effort: an older server has no such endpoint, and a failure here must
+    /// never disturb playback.
+    /// </summary>
+    public async Task ReportPlayAsync(Guid trackId)
+    {
+        try
+        {
+            using var response = await SendAsync(ActiveServer(), HttpMethod.Post, "me/plays", new { trackId });
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine($"Play not reported: {ex.Message}");
+        }
+    }
 
     // ── Auditoriums ──
     public async Task<List<AuditoriumDto>> GetAuditoriumsAsync() =>

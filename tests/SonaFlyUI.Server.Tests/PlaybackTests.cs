@@ -63,7 +63,12 @@ public sealed class PlaybackTests : IDisposable
     private ClaimsPrincipal Principal => new(new ClaimsIdentity([
         new Claim(ClaimTypes.NameIdentifier, _user.Id.ToString()), new Claim(ClaimTypes.Name, "listener")], "test"));
 
-    private StreamController Controller(bool authenticated = false) => new(new StreamingService(_db), _tickets, _db)
+    private StreamController Controller(bool authenticated = false) => new(new StreamingService(_db), _tickets, _db,
+        // Transcoding off: these tests are about who may stream, not in what format.
+        new TranscodeCache(new FfmpegAudioEncoder(Microsoft.Extensions.Options.Options.Create(new TranscodingOptions()),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<FfmpegAudioEncoder>.Instance),
+            Microsoft.Extensions.Options.Options.Create(new TranscodingOptions { Enabled = false }),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TranscodeCache>.Instance))
     {
         ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext
             { User = authenticated ? Principal : new ClaimsPrincipal() } }

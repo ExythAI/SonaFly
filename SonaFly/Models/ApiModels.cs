@@ -85,7 +85,9 @@ public record PlaylistDto(
 
 public record PlaylistItemDto(
     Guid Id, Guid TrackId, string TrackTitle, string? ArtistName,
-    string? AlbumTitle, double? DurationSeconds, int SortOrder
+    string? AlbumTitle, double? DurationSeconds, int SortOrder,
+    // Absent from older servers, so both stay optional.
+    Guid? AlbumId = null, Guid? ArtworkId = null
 );
 
 // ── Mixed Tapes ──

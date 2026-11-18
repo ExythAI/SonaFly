@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
-import { streamUrl } from '../api/client';
+import { reportPlay, streamUrl } from '../api/client';
 import { errorMessage } from './Feedback';
 import { useAuth } from '../auth/AuthContext';
 
@@ -75,7 +75,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 setDuration(Number.isFinite(audio.duration) ? audio.duration : track.durationSeconds ?? 0);
             };
             audio.src = url; audio.volume = volumeRef.current;
-            if (desired.current) await audio.play();
+            if (desired.current) { await audio.play(); reportPlay(track.id); }
             else setIsBuffering(false);
         } catch (error) {
             if (request !== requestRef.current || audioRef.current !== audio) return;

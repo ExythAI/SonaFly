@@ -34,7 +34,11 @@ namespace SonaFly
                 AllowAutoRedirect = false,
             }));
             builder.Services.AddSingleton<SonaFlyApiClient>();
-            builder.Services.AddSingleton<AudioPlayerService>();
+            builder.Services.AddSingleton(services =>
+                new AudioPlayerService(services.GetRequiredService<SonaFlyApiClient>())
+                {
+                    UseCompressedStreams = StreamQuality.ShouldCompress,
+                });
             builder.Services.AddSingleton<PlaylistPickerService>();
             builder.Services.AddSingleton<AuditoriumService>();
 

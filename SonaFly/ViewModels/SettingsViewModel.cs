@@ -33,6 +33,27 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
+    // ── Streaming quality ──
+    public IReadOnlyList<string> StreamQualityOptions { get; } =
+    [
+        "Original files",
+        "Smaller on mobile data",
+        "Always smaller",
+    ];
+
+    /// <summary>Applies from the next track; the one playing keeps the stream it has.</summary>
+    public int StreamQualityIndex
+    {
+        get => (int)StreamQuality.Mode;
+        set
+        {
+            // A picker reports -1 while it has nothing selected.
+            if (value < 0 || value >= StreamQualityOptions.Count) return;
+            StreamQuality.Mode = (StreamQualityMode)value;
+            OnPropertyChanged();
+        }
+    }
+
     // ── Server management ──
     [ObservableProperty] ObservableCollection<ServerConfig> servers = [];
     [ObservableProperty] ServerConfig? activeServer;
@@ -160,9 +181,9 @@ public partial class SettingsViewModel : ObservableObject
             return;
         }
 
-        if (NewPassword.Length < 6)
+        if (NewPassword.Length < 8)
         {
-            StatusMessage = "Password must be at least 6 characters.";
+            StatusMessage = "Password must be at least 8 characters.";
             IsSuccess = false;
             return;
         }

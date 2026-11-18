@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using SonaFlyUI.Server.Application.Common;
 using SonaFlyUI.Server.Domain.Entities;
 using SonaFlyUI.Server.Domain.Entities.Identification;
 
@@ -46,6 +47,13 @@ public class SonaFlyDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
     public DbSet<CatalogRelease> CatalogReleases => Set<CatalogRelease>();
     public DbSet<CatalogOverride> CatalogOverrides => Set<CatalogOverride>();
 
+    /// <summary>References a purge set aside for the next scan to put back.</summary>
+    public DbSet<ParkedLibraryLink> ParkedLibraryLinks => Set<ParkedLibraryLink>();
+
+    // ── Listening ──
+    public DbSet<PlayEvent> PlayEvents => Set<PlayEvent>();
+    public DbSet<FavoriteTrack> FavoriteTracks => Set<FavoriteTrack>();
+
     /// <summary>Admin-managed server settings, including encrypted secrets.</summary>
     public DbSet<ServerSetting> ServerSettings => Set<ServerSetting>();
 
@@ -76,6 +84,75 @@ public class SonaFlyDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
         {
             return null;
         }
+    }
+
+    // ── Search columns ──
+    // Derived from the names beside them on every save, here rather than at each place
+    // a name is set, so no code path can change a title and leave its search form stale.
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        RefreshSearchColumns();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        RefreshSearchColumns();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void RefreshSearchColumns()
+    {
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Modified)) continue;
+
+            switch (entry.Entity)
+            {
+                case Artist artist:
+                    artist.SearchName = SearchText.Normalize(artist.Name);
+                    break;
+                case Album album:
+                    album.SearchTitle = SearchText.Normalize(album.Title);
+                    break;
+                case Track track:
+                    track.SearchTitle = SearchText.Normalize(track.Title);
+                    track.SearchGenre = SearchText.Normalize(track.Genre);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fills the search columns of rows saved before those columns existed. Runs at
+    /// startup and does nothing once every row has them.
+    /// </summary>
+    public async Task<int> BackfillSearchColumnsAsync(CancellationToken ct = default)
+    {
+        var filled = 0;
+
+        var artists = await Artists.Where(a => a.SearchName == "" && a.Name != "").ToListAsync(ct);
+        foreach (var artist in artists) artist.SearchName = SearchText.Normalize(artist.Name);
+        filled += artists.Count;
+
+        var albums = await Albums.Where(a => a.SearchTitle == "" && a.Title != "").ToListAsync(ct);
+        foreach (var album in albums) album.SearchTitle = SearchText.Normalize(album.Title);
+        filled += albums.Count;
+
+        var tracks = await Tracks
+            .Where(t => (t.SearchTitle == "" && t.Title != "") ||
+                        (t.SearchGenre == "" && t.Genre != null && t.Genre != ""))
+            .ToListAsync(ct);
+        foreach (var track in tracks)
+        {
+            track.SearchTitle = SearchText.Normalize(track.Title);
+            track.SearchGenre = SearchText.Normalize(track.Genre);
+        }
+        filled += tracks.Count;
+
+        if (filled > 0) await SaveChangesAsync(ct);
+        return filled;
     }
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -228,6 +305,33 @@ public class SonaFlyDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
             e.HasOne(x => x.Track).WithMany().HasForeignKey(x => x.TrackId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.QueuedByUser).WithMany().HasForeignKey(x => x.QueuedByUserId).OnDelete(DeleteBehavior.NoAction);
             e.HasIndex(x => new { x.AuditoriumId, x.Position });
+        });
+
+        // ── ParkedLibraryLink ──
+        builder.Entity<ParkedLibraryLink>(e =>
+        {
+            e.HasIndex(x => x.FilePath);
+            e.HasIndex(x => x.Kind);
+            e.Property(x => x.FilePath).HasMaxLength(4096);
+            e.Property(x => x.TargetName).HasMaxLength(512);
+            e.Property(x => x.TargetArtistName).HasMaxLength(512);
+        });
+
+        // ── Listening ──
+        builder.Entity<PlayEvent>(e =>
+        {
+            e.HasIndex(x => new { x.UserId, x.PlayedUtc });
+            e.HasIndex(x => x.TrackId);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Track).WithMany().HasForeignKey(x => x.TrackId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<FavoriteTrack>(e =>
+        {
+            e.HasIndex(x => new { x.UserId, x.TrackId }).IsUnique();
+            e.HasIndex(x => x.TrackId);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Track).WithMany().HasForeignKey(x => x.TrackId).OnDelete(DeleteBehavior.Cascade);
         });
 
         ConfigureIdentification(builder);

@@ -186,7 +186,9 @@ public class PlaylistService : IPlaylistService
                         i.Track.PrimaryArtist != null ? i.Track.PrimaryArtist.Name : null,
                         i.Track.Album != null ? i.Track.Album.Title : null,
                         i.Track.DurationSeconds,
-                        i.SortOrder))
+                        i.SortOrder,
+                        i.Track.AlbumId,
+                        i.Track.Album != null ? i.Track.Album.ArtworkId : null))
                     .ToList()))
             .FirstOrDefaultAsync(ct);
     }

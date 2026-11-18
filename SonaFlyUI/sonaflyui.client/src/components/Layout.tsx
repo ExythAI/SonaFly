@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Box, Drawer, Toolbar, Typography, List, ListItemButton, ListItemIcon, ListItemText, IconButton, Divider, Avatar, Button, Stack } from '@mui/material';
-import { Dashboard, FolderOpen, People, QueueMusic, Search, Settings, Menu, Logout, Album, MusicNote, Block, MeetingRoom, LibraryMusic } from '@mui/icons-material';
+import { Dashboard, FolderOpen, People, QueueMusic, Search, Settings, Menu, Logout, Album, MusicNote, Block, MeetingRoom, LibraryMusic, FactCheck } from '@mui/icons-material';
 import { useAuth } from '../auth/AuthContext';
 import { NowPlayingBar } from './NowPlayingBar';
 
@@ -20,6 +20,7 @@ const groups = [
     ] },
     { label: 'Administration', admin: true, items: [
         { label: 'Music folders', icon: <FolderOpen />, path: '/library-roots' },
+        { label: 'Review matches', icon: <FactCheck />, path: '/identification-review' },
         { label: 'Users', icon: <People />, path: '/users' },
         { label: 'Restrictions', icon: <Block />, path: '/restrictions' },
         { label: 'System', icon: <Settings />, path: '/system' },

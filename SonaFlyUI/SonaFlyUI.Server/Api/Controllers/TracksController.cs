@@ -42,12 +42,12 @@ public class TracksController : ControllerBase
         // Filter
         if (!string.IsNullOrWhiteSpace(filter))
         {
-            var f = filter.ToLower();
+            var f = SearchText.Normalize(filter);
             query = query.Where(t =>
-                t.Title.ToLower().Contains(f) ||
-                (t.PrimaryArtist != null && t.PrimaryArtist.Name.ToLower().Contains(f)) ||
-                (t.Album != null && t.Album.Title.ToLower().Contains(f)) ||
-                (t.Genre != null && t.Genre.ToLower().Contains(f)));
+                t.SearchTitle.Contains(f) ||
+                (t.PrimaryArtist != null && t.PrimaryArtist.SearchName.Contains(f)) ||
+                (t.Album != null && t.Album.SearchTitle.Contains(f)) ||
+                t.SearchGenre.Contains(f));
         }
 
         var total = await query.CountAsync(ct);

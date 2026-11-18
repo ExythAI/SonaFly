@@ -188,6 +188,48 @@ public class ArtworkService : IArtworkService
         }
     }
 
+    /// <summary>
+    /// Opens a cover scaled down for a list or grid. Falls back to the original when no
+    /// thumbnail size fits the request or one cannot be made.
+    /// </summary>
+    public async Task<FileStreamResultModel?> OpenThumbnailAsync(Guid artworkId, int? size, CancellationToken ct)
+    {
+        if (ArtworkThumbnails.Snap(size) is not { } snapped) return await OpenArtworkAsync(artworkId, ct);
+
+        var asset = await _db.ArtworkAssets.AsNoTracking().FirstOrDefaultAsync(a => a.Id == artworkId, ct);
+        if (asset == null) return null;
+
+        var original = Path.Combine(ArtworkRoot, asset.StoragePath);
+        if (!File.Exists(original)) return null;
+
+        var thumbnail = Path.Combine(ArtworkRoot, ArtworkThumbnails.RelativePath(asset.StoragePath, snapped));
+        if (!File.Exists(thumbnail))
+        {
+            var bytes = ArtworkThumbnails.Create(await File.ReadAllBytesAsync(original, ct), snapped);
+            if (bytes == null) return await OpenArtworkAsync(artworkId, ct);
+
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(thumbnail)!);
+                // Written under another name first: two requests for the same new thumbnail
+                // must not let one of them read the other's half-written file.
+                var partial = $"{thumbnail}.{Guid.NewGuid():N}.partial";
+                await File.WriteAllBytesAsync(partial, bytes, ct);
+                File.Move(partial, thumbnail, overwrite: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The cache could not be written; the picture can still be served.
+                _logger.LogWarning(ex, "Could not cache a thumbnail for artwork {ArtworkId}", artworkId);
+                return new FileStreamResultModel(new MemoryStream(bytes), ArtworkThumbnails.MimeType,
+                    Path.GetFileName(thumbnail), bytes.Length);
+            }
+        }
+
+        var stream = new FileStream(thumbnail, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return new FileStreamResultModel(stream, ArtworkThumbnails.MimeType, Path.GetFileName(thumbnail), stream.Length);
+    }
+
     public async Task<FileStreamResultModel?> OpenArtworkAsync(Guid artworkId, CancellationToken ct)
     {
         var asset = await _db.ArtworkAssets.AsNoTracking().FirstOrDefaultAsync(a => a.Id == artworkId, ct);

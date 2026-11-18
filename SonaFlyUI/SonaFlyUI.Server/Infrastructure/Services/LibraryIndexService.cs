@@ -15,6 +15,7 @@ public class LibraryIndexService : ILibraryIndexService
     private readonly IMetadataReader _metadataReader;
     private readonly IArtworkService _artworkService;
     private readonly ILogger<LibraryIndexService> _logger;
+    private readonly LibraryLinkPreserver? _links;
 
     // Scan-session caches to avoid duplicate inserts between batch saves
     private Dictionary<string, Artist> _artistCache = null!;
@@ -25,18 +26,23 @@ public class LibraryIndexService : ILibraryIndexService
     // 30-track album does not trigger 30 identical folder scans and remote lookups (N22).
     private HashSet<Guid> _albumArtworkResolved = null!;
 
+    // Approved identification corrections for the root being scanned, by track.
+    private Dictionary<Guid, List<Domain.Entities.Identification.CatalogOverride>> _approvedCorrections = [];
+
     public LibraryIndexService(
         SonaFlyDbContext db,
         IFileScanner fileScanner,
         IMetadataReader metadataReader,
         IArtworkService artworkService,
-        ILogger<LibraryIndexService> logger)
+        ILogger<LibraryIndexService> logger,
+        LibraryLinkPreserver? links = null)
     {
         _db = db;
         _fileScanner = fileScanner;
         _metadataReader = metadataReader;
         _artworkService = artworkService;
         _logger = logger;
+        _links = links;
     }
 
     public async Task<ScanJobDto> ScanLibraryRootAsync(ScanRequest request, CancellationToken ct)
@@ -80,6 +86,11 @@ public class LibraryIndexService : ILibraryIndexService
             _genreCache = (await _db.Genres.ToListAsync(ct))
                 .ToDictionary(g => g.Name.ToLowerInvariant(), g => g);
             _albumArtworkResolved = [];
+            _approvedCorrections = (await _db.CatalogOverrides.AsNoTracking()
+                    .Where(o => o.Track.LibraryRootId == libraryRootId)
+                    .ToListAsync(ct))
+                .GroupBy(o => o.TrackId)
+                .ToDictionary(g => g.Key, g => g.ToList());
 
             // Get existing tracks for this library root for comparison
             var existingTracks = (await _db.Tracks
@@ -126,7 +137,7 @@ public class LibraryIndexService : ILibraryIndexService
                     // Batch save every 100 files
                     if (scanJob.FilesScanned % 100 == 0)
                     {
-                        await _db.SaveChangesAsync(ct);
+                        await SaveAndRestoreLinksAsync(ct);
                         _logger.LogInformation("Scan progress: {Scanned} files scanned, {Added} added",
                             scanJob.FilesScanned, scanJob.FilesAdded);
                     }
@@ -206,7 +217,7 @@ public class LibraryIndexService : ILibraryIndexService
 
         // The scan may have been cancelled; its final state still has to be persisted, so this
         // save must not use the (possibly already-cancelled) scan token.
-        await _db.SaveChangesAsync(CancellationToken.None);
+        await SaveAndRestoreLinksAsync(CancellationToken.None);
 
         // Only a scan that saw the whole tree may garbage-collect metadata.
         if (scanJob.Status == ScanStatus.Completed)
@@ -223,6 +234,28 @@ public class LibraryIndexService : ILibraryIndexService
         return MapScanJob(scanJob, libraryRoot.Name);
     }
 
+
+    /// <summary>
+    /// Saves what the scan has indexed so far and puts back anything a purge parked for
+    /// those tracks: playlist and mixed tape entries, favourites, restrictions.
+    /// <para>
+    /// Both happen in one transaction. A restricted album must never be visible, even for
+    /// a moment, between its tracks appearing and its restriction being re-attached.
+    /// </para>
+    /// </summary>
+    private async Task SaveAndRestoreLinksAsync(CancellationToken ct)
+    {
+        if (_links == null)
+        {
+            await _db.SaveChangesAsync(ct);
+            return;
+        }
+
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        await _db.SaveChangesAsync(ct);
+        await _links.RestoreAsync(ct);
+        await transaction.CommitAsync(ct);
+    }
     /// <summary>
     /// Removes metadata entities that no longer have any track at all.
     /// <para>
@@ -345,12 +378,15 @@ public class LibraryIndexService : ILibraryIndexService
         var album = GetOrCreateAlbum(metadata.Album, albumArtist?.Id, metadata.Year);
         var genre = GetOrCreateGenre(metadata.Genre);
 
+        var approved = ApprovedCorrections(track.Id);
+        if (approved.Artist != null) artist = approved.Artist;
+
         track.DurationSeconds = metadata.DurationSeconds;
         track.BitRateKbps = metadata.BitRateKbps;
         track.SampleRateHz = metadata.SampleRateHz;
         track.TrackNumber = metadata.TrackNumber;
         track.DiscNumber = metadata.DiscNumber;
-        track.Title = metadata.Title ?? file.FileName;
+        track.Title = approved.Title ?? metadata.Title ?? file.FileName;
         track.AlbumId = album?.Id;
         track.PrimaryArtistId = artist?.Id;
         track.Genre = metadata.Genre;
@@ -465,6 +501,40 @@ public class LibraryIndexService : ILibraryIndexService
         {
             album.ArtworkId = artworkResult.ArtworkId;
         }
+    }
+
+    /// <summary>
+    /// The corrections an administrator approved for a track, if any. They outrank the
+    /// tags in the file: the tags have not changed, so without this a rescan would quietly
+    /// put the old title and artist back (review backlog U04).
+    /// </summary>
+    /// <remarks>
+    /// A correction is kept even when the file itself changes. Telling a retag from a
+    /// replaced recording needs the audio fingerprint, which a scan does not compute; the
+    /// identification job is what notices that and offers the track for review again.
+    /// </remarks>
+    private (string? Title, Artist? Artist) ApprovedCorrections(Guid trackId)
+    {
+        if (_approvedCorrections.TryGetValue(trackId, out var corrections) == false) return (null, null);
+
+        string? title = null;
+        Artist? artist = null;
+        foreach (var correction in corrections)
+        {
+            if (correction.Field == "Title" && string.IsNullOrWhiteSpace(correction.ValueText) == false)
+            {
+                title = correction.ValueText;
+            }
+            else if (correction.Field == "Artist")
+            {
+                // The approved artist row itself when it still exists, so the track stays
+                // with exactly that artist; otherwise the same name.
+                artist = _artistCache.Values.FirstOrDefault(a => a.Id == correction.ValueId)
+                         ?? GetOrCreateArtist(correction.ValueText);
+            }
+        }
+
+        return (title, artist);
     }
 
     private Artist? GetOrCreateArtist(string? name)

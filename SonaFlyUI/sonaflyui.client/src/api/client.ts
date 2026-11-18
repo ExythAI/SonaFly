@@ -5,9 +5,11 @@ import {
 } from './session.ts';
 import type {
     AlbumDetailDto, AlbumDto, ArtistDto, AuditoriumListDto, CreateUserRequest, GenreDto,
-    IdentificationJobDto, IdentificationJobQueuedDto, IdentificationKeyStateDto, IdentificationStatusDto,
+    AcoustIdKeyTestResultDto, IdentificationJobDto, IdentificationJobQueuedDto, IdentificationKeySaveResultDto,
+    IdentificationKeyStateDto, IdentificationStatusDto,
     LibraryRootDto, MixedTapeDto, PaginatedResult, PlaylistDto, ScanJobDto, SearchResultDto,
     SystemStatusDto, TrackListItemDto, UserInfoDto, UserRestrictionDto,
+    AppliedChangeDto, BackupFileDto, BackupListDto, ReviewDecision, ReviewOutcomeDto, ReviewPageDto,
 } from './types.ts';
 
 const api = axios.create({
@@ -264,6 +266,8 @@ export const systemApi = {
     health: () => api.get('/health'),
     status: () => api.get<SystemStatusDto>('/system/status'),
     purge: () => api.post('/system/purge'),
+    backups: () => api.get<BackupListDto>('/system/backups'),
+    createBackup: () => api.post<BackupFileDto>('/system/backups'),
 };
 
 // ── Music identification ──
@@ -277,12 +281,21 @@ export const identificationApi = {
     resume: (jobId: string) => api.post(`/identification/jobs/${jobId}/resume`),
     cancel: (jobId: string) => api.post(`/identification/jobs/${jobId}/cancel`),
     retryErrors: (jobId: string) => api.post(`/identification/jobs/${jobId}/retry-errors`),
+    // Review: matches that disagree with the catalog, and what to do about them.
+    review: (band: string, skip = 0, take = 50) =>
+        api.get<ReviewPageDto>('/identification/review', { params: { band: band || undefined, skip, take } }),
+    applied: (take = 25) => api.get<AppliedChangeDto[]>('/identification/review/applied', { params: { take } }),
+    apply: (items: ReviewDecision[]) => api.post<ReviewOutcomeDto>('/identification/proposals/apply-catalog', { items }),
+    reject: (items: ReviewDecision[]) => api.post<ReviewOutcomeDto>('/identification/proposals/reject', { items }),
+    revert: (proposalId: string) => api.post(`/identification/proposals/${proposalId}/revert`),
 };
 
 // ── Server settings (admin) ──
 export const settingsApi = {
     getIdentificationKeys: () => api.get<IdentificationKeyStateDto>('/settings/identification'),
-    saveAcoustIdKey: (key: string) => api.put<IdentificationKeyStateDto>('/settings/identification/acoustid-key', { key }),
+    saveAcoustIdKey: (key: string) => api.put<IdentificationKeySaveResultDto>('/settings/identification/acoustid-key', { key }),
+    // With no key, the server tests the key it currently uses.
+    testAcoustIdKey: (key?: string) => api.post<AcoustIdKeyTestResultDto>('/settings/identification/acoustid-key/test', { key: key || null }),
     clearAcoustIdKey: () => api.delete<IdentificationKeyStateDto>('/settings/identification/acoustid-key'),
 };
 
@@ -294,11 +307,19 @@ export const auditoriumsApi = {
 };
 
 // ── Artwork helper ──
-export const artworkUrl = (artworkId: string | null | undefined) =>
-    artworkId ? `/api/artwork/${artworkId}` : undefined;
+// Lists and grids get a thumbnail; pass a larger size where the cover is shown big.
+export const artworkUrl = (artworkId: string | null | undefined, size: number = 320) =>
+    artworkId ? `/api/artwork/${artworkId}?size=${size}` : undefined;
 
 // ── Stream helper ──
 export const streamUrl = async (trackId: string): Promise<string> => {
     const response = await api.get<{ url: string }>(`/stream/tracks/${trackId}/url`);
     return response.data.url;
+};
+
+// ── Listening ──
+// Tells the server a track started, for "recently played" and "most played". Never
+// allowed to interrupt playback: a failure here is ignored.
+export const reportPlay = (trackId: string): void => {
+    void api.post('/me/plays', { trackId }).catch(() => undefined);
 };

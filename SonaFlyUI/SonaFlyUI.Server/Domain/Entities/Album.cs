@@ -4,6 +4,9 @@ public class Album : EntityBase
 {
     public string Title { get; set; } = string.Empty;
     public string? SortTitle { get; set; }
+
+    /// <summary>Title folded for searching; kept in step by the database context.</summary>
+    public string SearchTitle { get; set; } = string.Empty;
     public Guid? AlbumArtistId { get; set; }
     public int? Year { get; set; }
     public int? DiscCount { get; set; }

@@ -47,10 +47,14 @@ WORKDIR /app
 # libchromaprint-tools provides fpcalc for music identification fingerprints; it pulls in
 # the FFmpeg decoding libraries it needs. The version comes from the base image's
 # distribution and is logged per fingerprint, so a rebuild that moves it stays visible.
+#
+# ffmpeg makes the compressed MP3 streams offered to clients on slow connections. Without
+# it the server still works and serves originals.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl libchromaprint-tools && \
+    apt-get install -y --no-install-recommends curl libchromaprint-tools ffmpeg && \
     rm -rf /var/lib/apt/lists/* && \
-    fpcalc -version
+    fpcalc -version && \
+    ffmpeg -version | head -n 1
 
 COPY --from=build /app/publish .
 
@@ -60,7 +64,7 @@ COPY --from=build /src/SonaFlyUI/sonaflyui.client/dist ./wwwroot
 # The container parses media supplied from mounted storage, so it does not run as root.
 # APP_UID is the non-root user the .NET base images provide. Only the data directories
 # are writable; the application directory stays owned by root and read-only to the app.
-RUN mkdir -p /app/data/db /app/data/artwork /app/data/logs /app/data/keys && \
+RUN mkdir -p /app/data/db /app/data/artwork /app/data/logs /app/data/keys /app/data/transcodes && \
     chown -R $APP_UID:$APP_UID /app/data
 
 ENV ASPNETCORE_URLS=http://+:8080
@@ -73,6 +77,10 @@ ENV SonaFly__DataProtectionKeyRoot=/app/data/keys
 # Bundled fingerprinting tool. Identification itself stays off until
 # SonaFly__Identification__Enabled=true is set for the container.
 ENV SonaFly__Identification__FpcalcPath=/usr/bin/fpcalc
+# Daily log files, kept in the logs volume so they survive the container being replaced.
+ENV SonaFly__LogRoot=/app/data/logs
+# A cache of compressed copies. Safe to lose, so it needs no volume.
+ENV SonaFly__Transcoding__CacheRoot=/app/data/transcodes
 
 EXPOSE 8080
 

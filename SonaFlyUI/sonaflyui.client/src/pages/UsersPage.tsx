@@ -72,7 +72,7 @@ const UsersPage: React.FC = () => {
                     <TextField required label="Username" value={form.userName} onChange={e => setForm({ ...form, userName: e.target.value })} />
                     <TextField type="email" required label="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
                     <TextField label="Display Name" value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} />
-                    <TextField required helperText="At least 6 characters, including a lowercase letter and a number." label="Password" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+                    <TextField required helperText="At least 8 characters, including a lowercase letter and a number." label="Password" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
                     <TextField label="Role" select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
                         <MenuItem value="Admin">Admin</MenuItem><MenuItem value="User">User</MenuItem>
                     </TextField>
@@ -82,7 +82,7 @@ const UsersPage: React.FC = () => {
 
             <Dialog open={!!pwDialog} onClose={() => setPwDialog(null)} maxWidth="xs" fullWidth>
                 <DialogTitle>Reset Password</DialogTitle>
-                <DialogContent sx={{ pt: '16px !important' }}>{resetPwMut.isError && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage(resetPwMut.error)}</Alert>}<TextField fullWidth helperText="At least 6 characters, including a lowercase letter and a number." label="New Password" type="password" value={newPw} onChange={e => setNewPw(e.target.value)} /></DialogContent>
+                <DialogContent sx={{ pt: '16px !important' }}>{resetPwMut.isError && <Alert severity="error" sx={{ mb: 2 }}>{errorMessage(resetPwMut.error)}</Alert>}<TextField fullWidth helperText="At least 8 characters, including a lowercase letter and a number." label="New Password" type="password" value={newPw} onChange={e => setNewPw(e.target.value)} /></DialogContent>
                 <DialogActions><Button onClick={() => setPwDialog(null)}>Cancel</Button><Button variant="contained" disabled={resetPwMut.isPending || !/^(?=.*[a-z])(?=.*\d).{6,}$/.test(newPw)} onClick={() => { if (pwDialog) resetPwMut.mutate({ id: pwDialog, pw: newPw }); }}>{resetPwMut.isPending ? 'Resetting…' : 'Reset password'}</Button></DialogActions>
             </Dialog>
         </Box>

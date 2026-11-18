@@ -32,7 +32,10 @@ public class SearchController : ControllerBase
         if (string.IsNullOrWhiteSpace(q))
             return Ok(new SearchResultDto([], [], []));
 
-        var term = q.Trim().ToLower();
+        // Folded the same way the stored names are; see SearchText.
+        var term = SearchText.Normalize(q);
+        if (term.Length == 0)
+            return Ok(new SearchResultDto([], [], []));
 
         // Probes for "the term is a whole word here", by padding both the term and the
         // field with spaces: " vai " is in " steve vai " but not in " vain glory opera ".
@@ -46,7 +49,7 @@ public class SearchController : ControllerBase
         // missing, or restricted for this user. Count only what they can actually play.
         var artists = await _db.Artists.AsNoTracking()
             .ApplyRestrictions(_db, CurrentUserId)
-            .Where(a => a.Name.ToLower().Contains(term))
+            .Where(a => a.SearchName.Contains(term))
             .OrderBy(a => a.Name).ThenBy(a => a.Id)
             .Take(limit)
             .Select(a => new ArtistDto(a.Id, a.Name, a.SortName, a.ArtworkId,
@@ -62,7 +65,7 @@ public class SearchController : ControllerBase
         var albums = await _db.Albums.AsNoTracking()
             .ApplyRestrictions(_db, CurrentUserId)
             .WhereHasPlayableTracks(_db, CurrentUserId)
-            .Where(a => a.Title.ToLower().Contains(term))
+            .Where(a => a.SearchTitle.Contains(term))
             .OrderBy(a => a.Title).ThenBy(a => a.Id)
             .Take(limit)
             .Select(a => new AlbumDto(a.Id, a.Title,
@@ -84,10 +87,10 @@ public class SearchController : ControllerBase
         var tracks = await _db.Tracks.AsNoTracking()
             .ApplyRestrictions(_db, CurrentUserId)
             .Where(t => t.IsIndexed && !t.IsMissing &&
-                (t.Title.ToLower().Contains(term) ||
-                 (t.PrimaryArtist != null && t.PrimaryArtist.Name.ToLower().Contains(term)) ||
-                 (t.Album != null && t.Album.Title.ToLower().Contains(term)) ||
-                 (t.Genre != null && t.Genre.ToLower().Contains(term))))
+                (t.SearchTitle.Contains(term) ||
+                 (t.PrimaryArtist != null && t.PrimaryArtist.SearchName.Contains(term)) ||
+                 (t.Album != null && t.Album.SearchTitle.Contains(term)) ||
+                 (t.SearchGenre.Contains(term))))
             // Relevance before alphabetics. A plain substring match is generous enough to
             // find things, but on its own it buries the answer: "roth" returned five
             // variations of "Brothers" and no David Lee Roth, and "vai" returned "Vain"
@@ -100,17 +103,17 @@ public class SearchController : ControllerBase
             // out — the incidental hits still appear, lower down.
             .OrderBy(t =>
                 // The song someone typed the exact name of.
-                t.Title.ToLower() == term ? 0
+                t.SearchTitle == term ? 0
                 // The term is a whole word in the artist, album or title.
                 : t.PrimaryArtist != null &&
-                  (" " + t.PrimaryArtist.Name.ToLower() + " ").Contains(wholeWord) ? 1
+                  (" " + t.PrimaryArtist.SearchName + " ").Contains(wholeWord) ? 1
                 : t.Album != null &&
-                  (" " + t.Album.Title.ToLower() + " ").Contains(wholeWord) ? 2
-                : (" " + t.Title.ToLower() + " ").Contains(wholeWord) ? 3
+                  (" " + t.Album.SearchTitle + " ").Contains(wholeWord) ? 2
+                : (" " + t.SearchTitle + " ").Contains(wholeWord) ? 3
                 // The term begins a name, but is not the whole of it.
-                : t.Title.ToLower().StartsWith(term) ? 4
-                : t.PrimaryArtist != null && t.PrimaryArtist.Name.ToLower().StartsWith(term) ? 5
-                : t.Album != null && t.Album.Title.ToLower().StartsWith(term) ? 6
+                : t.SearchTitle.StartsWith(term) ? 4
+                : t.PrimaryArtist != null && t.PrimaryArtist.SearchName.StartsWith(term) ? 5
+                : t.Album != null && t.Album.SearchTitle.StartsWith(term) ? 6
                 // Buried mid-word: "roth" in "Brothers".
                 : 7)
             .ThenBy(t => t.PrimaryArtist != null ? t.PrimaryArtist.Name : string.Empty)

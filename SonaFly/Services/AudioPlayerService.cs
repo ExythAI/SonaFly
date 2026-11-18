@@ -17,7 +17,14 @@ public partial class AudioPlayerService : ObservableObject
     public Task<string?> GetCurrentStreamUrlAsync() => CurrentTrack is { } track
         ? GetStreamUrlAsync(track.Id) : Task.FromResult<string?>(null);
 
-    private async Task<string?> GetStreamUrlAsync(Guid trackId) => await _api.GetStreamUrlAsync(trackId);
+    private async Task<string?> GetStreamUrlAsync(Guid trackId) =>
+        await _api.GetStreamUrlAsync(trackId, UseCompressedStreams());
+
+    /// <summary>
+    /// Asked each time a track starts: whether to request the smaller compressed stream.
+    /// Supplied by the app from the listener's setting and the current connection.
+    /// </summary>
+    public Func<bool> UseCompressedStreams { get; set; } = () => false;
 
     // Changes signal that the player should request a fresh authorized URL.
     public int StreamVersion { get; private set; }
@@ -66,6 +73,10 @@ public partial class AudioPlayerService : ObservableObject
         var duration = PlaybackProgress.Sanitize(durationSeconds);
         if (duration > 0) Duration = duration;
     }
+    /// <summary>Reports the current track as played, once it has actually started.</summary>
+    public Task ReportCurrentPlayAsync() =>
+        CurrentTrack is { } track ? _api.ReportPlayAsync(track.Id) : Task.CompletedTask;
+
     public string? CurrentArtworkUrl => CurrentTrack?.ArtworkId != null ? _api.ArtworkUrl(CurrentTrack.ArtworkId) : null;
 
     public event Action<double>? SeekRequested;

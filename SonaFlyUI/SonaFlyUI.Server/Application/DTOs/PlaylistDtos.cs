@@ -19,7 +19,11 @@ public record PlaylistItemDto(
     string? ArtistName,
     string? AlbumTitle,
     double? DurationSeconds,
-    int SortOrder
+    int SortOrder,
+    // After SortOrder so existing positional readers keep working. Needed to show a
+    // cover in the player and on the lock screen for tracks played from a playlist.
+    Guid? AlbumId = null,
+    Guid? ArtworkId = null
 );
 
 public record CreatePlaylistRequest(string Name, string? Description, bool IsPublic = false);

@@ -18,11 +18,22 @@ using SonaFlyUI.Server.Infrastructure.Configuration;
 using SonaFlyUI.Server.Infrastructure.Data;
 using SonaFlyUI.Server.Infrastructure.HealthChecks;
 using SonaFlyUI.Server.Infrastructure.Identity;
+using SonaFlyUI.Server.Infrastructure.Logging;
 using SonaFlyUI.Server.Infrastructure.Identification;
 using SonaFlyUI.Server.Infrastructure.Services;
 using static SonaFlyUI.Server.Api.Controllers.AuthController;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ── Log files ──
+// Off unless a directory is configured; the container image sets one inside its data
+// volume. The usual Logging:LogLevel settings apply to the file as they do to the console.
+var logRoot = builder.Configuration["SonaFly:LogRoot"];
+if (!string.IsNullOrWhiteSpace(logRoot))
+{
+    var retainDays = builder.Configuration.GetValue("SonaFly:LogRetainDays", 14);
+    builder.Services.AddSingleton<ILoggerProvider>(_ => new FileLoggerProvider(logRoot, retainDays));
+}
 
 // ── Database ──
 builder.Services.AddDbContext<SonaFlyDbContext>(options =>
@@ -35,7 +46,7 @@ builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
     options.Password.RequireLowercase = true;
     options.Password.RequireUppercase = false;
     options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequiredLength = 6;
+    options.Password.RequiredLength = 8;
     options.User.RequireUniqueEmail = true;
 
     // Throttle online password guessing. Login passes lockoutOnFailure: true.
@@ -207,11 +218,21 @@ builder.Services.AddScoped<IFileHashService, FileHashService>();
 builder.Services.AddScoped<IServerSettingsService, ServerSettingsService>();
 builder.Services.AddHttpClient<OnlineArtworkService>();
 builder.Services.AddScoped<IArtworkService, ArtworkService>();
+builder.Services.AddScoped<LibraryLinkPreserver>();
+
+// Database snapshots: nightly, and before a purge or a schema migration.
+builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection(BackupOptions.SectionName));
+builder.Services.AddSingleton<DatabaseBackupService>();
+builder.Services.AddHostedService<DatabaseBackupWorker>();
 builder.Services.AddScoped<ILibraryIndexService, LibraryIndexService>();
 builder.Services.AddSingleton<IScanQueue, ScanQueue>();
 // Serializes scans against destructive maintenance (backlog N16).
 builder.Services.AddSingleton<LibraryMaintenanceGate>();
 builder.Services.AddHostedService<LibraryScanBackgroundService>();
+
+// Rescans each library root once a day, so new music appears without pressing Scan.
+builder.Services.Configure<ScanScheduleOptions>(builder.Configuration.GetSection(ScanScheduleOptions.SectionName));
+builder.Services.AddHostedService<ScheduledScanService>();
 
 // Music identification worker (upgrade plan 6, 7, and 12). Idle while disabled.
 builder.Services.AddSingleton<AcoustIdThrottle>();
@@ -223,11 +244,18 @@ builder.Services.AddHttpClient<IAcoustIdClient, AcoustIdClient>((sp, http) =>
 builder.Services.AddHttpClient<IMusicBrainzClient, MusicBrainzClient>((sp, http) =>
     http.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<IOptions<IdentificationOptions>>().Value.RequestTimeoutSeconds));
 builder.Services.AddScoped<IdentificationItemProcessor>();
+builder.Services.AddScoped<IdentificationReviewService>();
 builder.Services.AddSingleton<IdentificationJobRunner>();
 builder.Services.AddHostedService<IdentificationBackgroundService>();
 
 // Streaming & Playlists
 builder.Services.AddScoped<IStreamingService, StreamingService>();
+
+// Compressed streams for slow or metered connections. Needs ffmpeg; without it the
+// originals are served.
+builder.Services.Configure<TranscodingOptions>(builder.Configuration.GetSection(TranscodingOptions.SectionName));
+builder.Services.AddSingleton<IAudioEncoder, FfmpegAudioEncoder>();
+builder.Services.AddSingleton<TranscodeCache>();
 
 // Stream tickets are signed with this key ring. It must outlive the container and be
 // shared by every replica, or outstanding stream URLs break on restart.
@@ -274,8 +302,22 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var db = scope.ServiceProvider.GetRequiredService<SonaFlyDbContext>();
+
+        // A migration rewrites tables in place. Snapshot the database first, so a
+        // migration that goes wrong on real data can be undone by restoring the file.
+        if ((await db.Database.GetPendingMigrationsAsync()).Any() &&
+            (await db.Database.GetAppliedMigrationsAsync()).Any())
+        {
+            var backup = await scope.ServiceProvider.GetRequiredService<DatabaseBackupService>()
+                .CreateAsync(DatabaseBackupService.BeforeMigration, CancellationToken.None);
+            if (backup != null) logger.LogInformation("Backed up the database to {File} before migrating.", backup.FileName);
+        }
+
         await db.Database.MigrateAsync();
         logger.LogInformation("Database migration applied successfully.");
+
+        var backfilled = await db.BackfillSearchColumnsAsync();
+        if (backfilled > 0) logger.LogInformation("Filled search columns for {Count} existing row(s).", backfilled);
 
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
         await IdentitySeeder.SeedRolesAsync(roleManager);

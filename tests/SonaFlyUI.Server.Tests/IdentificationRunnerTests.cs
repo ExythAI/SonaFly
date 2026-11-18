@@ -541,6 +541,30 @@ public sealed class IdentificationRunnerTests : IDisposable
         Assert.Equal(HttpMethod.Post, handler.LastMethod);
     }
 
+    [Theory]
+    [InlineData("""{"results": [], "status": "ok"}""", HttpStatusCode.OK, true)]
+    [InlineData("""{"error": {"code": 4, "message": "invalid API key"}, "status": "error"}""", HttpStatusCode.BadRequest, false)]
+    public async Task AKeyCheckUsesALookupThatCannotMatchAnything(string body, HttpStatusCode status, bool expected)
+    {
+        var handler = new RecordingHandler(status, body);
+        var client = new AcoustIdClient(new HttpClient(handler), new AcoustIdThrottle(new ProviderRateLimiter(TimeSpan.Zero)));
+
+        Assert.Equal(expected, await client.IsKeyAcceptedAsync("key-under-test", CancellationToken.None));
+        Assert.Contains("trackid=", handler.LastBody);
+        Assert.DoesNotContain("fingerprint", handler.LastBody);
+        Assert.DoesNotContain("key-under-test", handler.LastUri!.ToString());
+    }
+
+    [Fact]
+    public async Task AKeyCheckReportsAnUnreachableServiceAsUnknownNotInvalid()
+    {
+        var client = new AcoustIdClient(new HttpClient(new RecordingHandler(HttpStatusCode.ServiceUnavailable, "down")),
+            new AcoustIdThrottle(new ProviderRateLimiter(TimeSpan.Zero)));
+
+        var failure = await Assert.ThrowsAsync<IdentificationStepException>(() => client.IsKeyAcceptedAsync("k", CancellationToken.None));
+        Assert.True(failure.Retryable);
+    }
+
     [Fact]
     public async Task MusicBrainzTreatsAMissingRecordingAsNotFoundAndSendsTheUserAgent()
     {
@@ -779,6 +803,8 @@ public sealed class IdentificationRunnerTests : IDisposable
             Assert.Equal(ApiKey, apiKey);
             return _failure != null ? Task.FromException<string>(_failure) : Task.FromResult(_json);
         }
+
+        public Task<bool> IsKeyAcceptedAsync(string apiKey, CancellationToken ct) => Task.FromResult(apiKey == ApiKey);
     }
 
     private sealed class FakeMusicBrainzClient : IMusicBrainzClient

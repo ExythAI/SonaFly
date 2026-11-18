@@ -9,7 +9,7 @@
     <Grid RowDefinitions="*,Auto" Padding="16,16,16,0">
         <ScrollView IsVisible="{Binding HasAlbum}">
             <VerticalStackLayout Spacing="8">
-                <Image Source="{Binding Album.ArtworkId, Converter={StaticResource ArtworkUrlConverter}}"
+                <Image Source="{Binding Album.ArtworkId, Converter={StaticResource ArtworkUrlConverter}, ConverterParameter=640}"
                        HeightRequest="200" Aspect="AspectFill" BackgroundColor="#252540" />
                 <Label Text="{Binding Album.Title}" FontSize="22" FontAttributes="Bold" TextColor="#E8EAED" Margin="0,8,0,0" />
                 <Label Text="{Binding Album.ArtistName}" FontSize="14" TextColor="#9AA0A6" />

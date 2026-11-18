@@ -18,6 +18,8 @@ public class SystemController : ControllerBase
     private readonly IConfiguration _config;
     private readonly LibraryMaintenanceGate _gate;
     private readonly TrackEndSchedulerService _auditoriums;
+    private readonly LibraryLinkPreserver _links;
+    private readonly DatabaseBackupService _backups;
     private readonly ILogger<SystemController> _logger;
 
     public SystemController(
@@ -25,12 +27,16 @@ public class SystemController : ControllerBase
         IConfiguration config,
         LibraryMaintenanceGate gate,
         TrackEndSchedulerService auditoriums,
+        LibraryLinkPreserver links,
+        DatabaseBackupService backups,
         ILogger<SystemController> logger)
     {
         _db = db;
         _config = config;
         _gate = gate;
         _auditoriums = auditoriums;
+        _links = links;
+        _backups = backups;
         _logger = logger;
     }
 
@@ -91,8 +97,11 @@ public class SystemController : ControllerBase
     }
 
     /// <summary>
-    /// Purges all music library data (tracks, albums, artists, genres, playlists,
-    /// artwork, scan jobs) while preserving users, roles, and library root configs.
+    /// Purges all music library data (tracks, albums, artists, genres, artwork, scan jobs)
+    /// while preserving users, roles, library root configs, and what people made:
+    /// playlists and mixed tapes keep their names, and their entries, favourites and
+    /// content restrictions are parked and put back as a rescan finds the same files.
+    /// Play history is not kept.
     /// </summary>
     [HttpPost("system/purge")]
     [Authorize(Roles = "Admin")]
@@ -115,21 +124,43 @@ public class SystemController : ControllerBase
             .Select(a => a.StoragePath)
             .ToListAsync(ct);
 
+        // A snapshot first: this is the one operation that cannot be redone by rescanning.
+        // If it cannot be written the purge does not go ahead.
+        BackupFile? backup;
+        try
+        {
+            backup = await _backups.CreateAsync(DatabaseBackupService.BeforePurge, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Purge refused: the database backup that precedes it could not be written.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                message = "The library was not purged, because the backup taken first could not be written: " +
+                          ex.Message
+            });
+        }
+
+        ParkedLinkCounts parked;
         await using (var transaction = await _db.Database.BeginTransactionAsync(ct))
         {
+            // Before anything is deleted: record what each playlist entry, mixed tape entry,
+            // favourite and restriction pointed at, in a form the next scan can match.
+            parked = await _links.ParkAsync(ct);
+
             // Delete in dependency order to avoid FK issues. All of it commits together, so a
             // failure or cancellation part-way through leaves the library as it was rather than
             // half-erased.
             await _db.AuditoriumQueueItems.ExecuteDeleteAsync(ct);
             await _db.MixedTapeItems.ExecuteDeleteAsync(ct);
             await _db.PlaylistItems.ExecuteDeleteAsync(ct);
-            await _db.Playlists.ExecuteDeleteAsync(ct);
 
-            // Mixed tapes and restrictions name library data that is about to be deleted. Leaving
-            // them behind produces tapes that cannot be played and restrictions pointing at IDs a
-            // later rescan will reissue to unrelated entities.
-            await _db.MixedTapes.ExecuteDeleteAsync(ct);
+            // The entries and restrictions go, because the rows they name are about to stop
+            // existing and a rescan reissues IDs to unrelated entities. They were parked
+            // above. The playlists and mixed tapes themselves stay, empty until the rescan.
             await _db.UserRestrictions.ExecuteDeleteAsync(ct);
+            await _db.FavoriteTracks.ExecuteDeleteAsync(ct);
+            await _db.PlayEvents.ExecuteDeleteAsync(ct);
 
             await _db.TrackGenres.ExecuteDeleteAsync(ct);
             await _db.TrackArtists.ExecuteDeleteAsync(ct);
@@ -176,11 +207,44 @@ public class SystemController : ControllerBase
 
         return Ok(new
         {
-            message = "All library data purged. Library roots preserved.",
+            message = "Library data purged. Library roots, playlists and mixed tapes were kept; " +
+                      $"{parked.Total} playlist, mixed tape, favourite and restriction link(s) will be " +
+                      "restored as a rescan finds the same files.",
+            backup = backup?.FileName,
+            preserved = parked,
             auditoriumsReset = clearedRooms,
             artworkCacheCleared = cacheCleanup.Complete,
             artworkCacheDetail = cacheCleanup.Message
         });
+    }
+
+    /// <summary>The database snapshots on disk, newest first.</summary>
+    [HttpGet("system/backups")]
+    [Authorize(Roles = "Admin")]
+    public IActionResult ListBackups() => Ok(new
+    {
+        directory = _backups.BackupDirectory(),
+        backups = _backups.List(),
+    });
+
+    /// <summary>Takes a database snapshot now.</summary>
+    [HttpPost("system/backups")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> CreateBackup(CancellationToken ct)
+    {
+        try
+        {
+            var backup = await _backups.CreateAsync(DatabaseBackupService.Manual, ct);
+            return backup == null
+                ? Conflict(new { message = "There is no database file to back up." })
+                : Ok(backup);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Manual database backup failed.");
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new { message = "The backup could not be written: " + ex.Message });
+        }
     }
 
     /// <summary>
@@ -239,6 +303,14 @@ public class SystemController : ControllerBase
 
                 System.IO.File.Delete(entry);
                 removed++;
+
+                // Thumbnails made from this image are the server's too, and go with it.
+                foreach (var thumbnail in ArtworkThumbnails.AllRelativePaths(storagePath))
+                {
+                    var thumbnailPath = Path.GetFullPath(Path.Combine(cacheRoot, thumbnail));
+                    if (FileSystemPaths.IsSameOrUnder(thumbnailPath, cacheRoot) && System.IO.File.Exists(thumbnailPath))
+                        System.IO.File.Delete(thumbnailPath);
+                }
 
                 var parent = Path.GetDirectoryName(entry);
                 if (parent != null && !FileSystemPaths.AreSame(parent, cacheRoot) &&

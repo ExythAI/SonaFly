@@ -19,7 +19,8 @@ public partial class HomeViewModel : LibraryViewModelBase
         if (IsBusy) return;
         await RunAsync("Couldn't load recent albums.", async () =>
         {
-            var result = await _api.GetAlbumsAsync(1, 12);
+            // Newest additions first; older servers ignore the parameter.
+            var result = await _api.GetAlbumsAsync(1, 12, sort: "recent");
             RecentAlbums = result?.Items?.ToList() ?? [];
         });
     }

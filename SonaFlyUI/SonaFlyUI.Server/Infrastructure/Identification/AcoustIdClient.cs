@@ -24,6 +24,15 @@ public sealed class AcoustIdClient : IAcoustIdClient
     /// <summary>AcoustID error code for exceeding the request rate.</summary>
     private const int RateLimitedCode = 14;
 
+    /// <summary>
+    /// AcoustID has two kinds of key, and the one on a user's account page is
+    /// the wrong kind for lookups, so the message says which one to use.
+    /// </summary>
+    public const string RejectedKeyMessage =
+        "AcoustID rejected the key. Lookups need an application API key: register an application at " +
+        "https://acoustid.org/new-application and use the key it shows. The personal API key on your " +
+        "acoustid.org account page is for submitting fingerprints and is not accepted for lookups.";
+
     private readonly HttpClient _http;
     private readonly AcoustIdThrottle _throttle;
 
@@ -33,17 +42,39 @@ public sealed class AcoustIdClient : IAcoustIdClient
         _throttle = throttle;
     }
 
-    public async Task<string> LookupJsonAsync(string apiKey, string fingerprint, int durationSeconds, CancellationToken ct)
-    {
-        await _throttle.Limiter.WaitAsync(ct);
-
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+    public Task<string> LookupJsonAsync(string apiKey, string fingerprint, int durationSeconds, CancellationToken ct) =>
+        PostLookupAsync(new Dictionary<string, string>
         {
             ["client"] = apiKey,
             ["meta"] = "recordings",
             ["duration"] = durationSeconds.ToString(CultureInfo.InvariantCulture),
             ["fingerprint"] = fingerprint
-        });
+        }, ct);
+
+    public async Task<bool> IsKeyAcceptedAsync(string apiKey, CancellationToken ct)
+    {
+        try
+        {
+            // A lookup by a random AcoustID track ID: AcoustID checks the key
+            // first, and a valid key simply finds nothing.
+            await PostLookupAsync(new Dictionary<string, string>
+            {
+                ["client"] = apiKey,
+                ["trackid"] = Guid.NewGuid().ToString("D")
+            }, ct);
+            return true;
+        }
+        catch (IdentificationStepException ex) when (ex.RequiresAdministrator)
+        {
+            return false;
+        }
+    }
+
+    private async Task<string> PostLookupAsync(Dictionary<string, string> form, CancellationToken ct)
+    {
+        await _throttle.Limiter.WaitAsync(ct);
+
+        using var content = new FormUrlEncodedContent(form);
 
         HttpResponseMessage response;
         string body;
@@ -81,7 +112,7 @@ public sealed class AcoustIdClient : IAcoustIdClient
         if (errorCode == InvalidApiKeyCode)
         {
             throw new IdentificationStepException(IdentificationErrorCategory.Configuration, retryable: false,
-                "AcoustID rejected the client key. Save a valid key on the Music folders page, then resume the job.",
+                RejectedKeyMessage,
                 requiresAdministrator: true);
         }
 

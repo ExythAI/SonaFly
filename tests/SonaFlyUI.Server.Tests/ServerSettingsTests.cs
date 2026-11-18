@@ -8,10 +8,14 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SonaFlyUI.Server.Api.Controllers;
 using SonaFlyUI.Server.Application.DTOs;
+using SonaFlyUI.Server.Application.Identification;
 using SonaFlyUI.Server.Application.Interfaces;
 using SonaFlyUI.Server.Domain.Entities;
+using SonaFlyUI.Server.Domain.Entities.Identification;
+using SonaFlyUI.Server.Domain.Enums;
 using SonaFlyUI.Server.Infrastructure.Configuration;
 using SonaFlyUI.Server.Infrastructure.Data;
+using SonaFlyUI.Server.Infrastructure.Identification;
 using SonaFlyUI.Server.Infrastructure.Services;
 using Xunit;
 
@@ -111,8 +115,7 @@ public sealed class ServerSettingsTests : IDisposable
     {
         await Service().SetSecretAsync(ServerSettingKeys.AcoustIdClientKey, "the-actual-key", null, CancellationToken.None);
 
-        var controller = new ServerSettingsController(
-            Service(), NullLogger<ServerSettingsController>.Instance);
+        var controller = Controller(Service(), new KeyChecker(accepts: true));
         var result = await controller.GetIdentificationKeys(CancellationToken.None);
 
         var dto = Assert.IsType<OkObjectResult>(result.Result).Value as IdentificationKeyStateDto;
@@ -126,10 +129,10 @@ public sealed class ServerSettingsTests : IDisposable
     public async Task SavingThenClearingFlowsThroughTheController()
     {
         var service = Service();
-        var controller = new ServerSettingsController(service, NullLogger<ServerSettingsController>.Instance);
+        var controller = Controller(service, new KeyChecker(accepts: true));
 
         var saved = await controller.SetAcoustIdKey(new SetAcoustIdKeyRequest("fresh-key"), CancellationToken.None);
-        Assert.True((Assert.IsType<OkObjectResult>(saved.Result).Value as IdentificationKeyStateDto)!.Configured);
+        Assert.True((Assert.IsType<OkObjectResult>(saved.Result).Value as IdentificationKeySaveResultDto)!.Configured);
         Assert.Equal("fresh-key", await service.GetEffectiveAcoustIdKeyAsync(CancellationToken.None));
 
         var rejected = await controller.SetAcoustIdKey(new SetAcoustIdKeyRequest("  "), CancellationToken.None);
@@ -140,6 +143,133 @@ public sealed class ServerSettingsTests : IDisposable
         Assert.NotNull(state);
         Assert.False(state.Configured);
         Assert.Null(await service.GetEffectiveAcoustIdKeyAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AKeyAcoustIdRejectsIsNotSavedAndTheMessageNamesTheRightKind()
+    {
+        var service = Service();
+        await service.SetSecretAsync(ServerSettingKeys.AcoustIdClientKey, "previous-good-key", null, CancellationToken.None);
+
+        var result = await Controller(service, new KeyChecker(accepts: false))
+            .SetAcoustIdKey(new SetAcoustIdKeyRequest("user-api-key"), CancellationToken.None);
+
+        var bad = Assert.IsType<BadRequestObjectResult>(result.Result);
+        var message = System.Text.Json.JsonSerializer.Serialize(bad.Value);
+        Assert.Contains("new-application", message);
+        Assert.Contains("not saved", message);
+        Assert.Equal("previous-good-key", await service.GetEffectiveAcoustIdKeyAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AKeyIsSavedUnverifiedWhenAcoustIdCannotBeReached()
+    {
+        var service = Service();
+
+        var result = await Controller(service, new KeyChecker(unreachable: true))
+            .SetAcoustIdKey(new SetAcoustIdKeyRequest("some-key"), CancellationToken.None);
+
+        var dto = Assert.IsType<OkObjectResult>(result.Result).Value as IdentificationKeySaveResultDto;
+        Assert.NotNull(dto);
+        Assert.False(dto.Verified);
+        Assert.Contains("could not be checked", dto.Message);
+        Assert.Equal("some-key", await service.GetEffectiveAcoustIdKeyAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AnAcceptedKeyResumesOnlyJobsPausedForTheKey()
+    {
+        var root = new LibraryRoot { Name = "Music", Path = "/music" };
+        _db.LibraryRoots.Add(root);
+        var pausedForKey = new IdentificationJob
+        {
+            LibraryRootId = root.Id,
+            Status = IdentificationJobStatus.Paused,
+            Stage = IdentificationJobRunner.AdministratorPauseStage,
+            ErrorSummary = "AcoustID rejected the key."
+        };
+        var pausedByAdmin = new IdentificationJob { LibraryRootId = root.Id, Status = IdentificationJobStatus.Paused, Stage = "Analysing" };
+        _db.IdentificationJobs.AddRange(pausedForKey, pausedByAdmin);
+        await _db.SaveChangesAsync();
+
+        var result = await Controller(Service(), new KeyChecker(accepts: true))
+            .SetAcoustIdKey(new SetAcoustIdKeyRequest("application-key"), CancellationToken.None);
+
+        var dto = Assert.IsType<OkObjectResult>(result.Result).Value as IdentificationKeySaveResultDto;
+        Assert.True(dto!.Verified);
+        Assert.Contains("1 paused identification job was resumed", dto.Message);
+
+        var jobs = await _db.IdentificationJobs.AsNoTracking().ToDictionaryAsync(j => j.Id);
+        Assert.Equal(IdentificationJobStatus.Queued, jobs[pausedForKey.Id].Status);
+        Assert.Null(jobs[pausedForKey.Id].ErrorSummary);
+        Assert.Equal(IdentificationJobStatus.Paused, jobs[pausedByAdmin.Id].Status);
+    }
+
+    [Fact]
+    public async Task TestingChecksTheEnteredKeyOrElseTheSavedOne()
+    {
+        var service = Service();
+        var checker = new KeyChecker(accepts: true);
+        var controller = Controller(service, checker);
+
+        var nothingSaved = await controller.TestAcoustIdKey(new TestAcoustIdKeyRequest(null), CancellationToken.None);
+        Assert.False((Assert.IsType<OkObjectResult>(nothingSaved.Result).Value as AcoustIdKeyTestResultDto)!.Checked);
+        Assert.Empty(checker.Tested);
+
+        await service.SetSecretAsync(ServerSettingKeys.AcoustIdClientKey, "saved-key", null, CancellationToken.None);
+        var saved = await controller.TestAcoustIdKey(null, CancellationToken.None);
+        var savedResult = (Assert.IsType<OkObjectResult>(saved.Result).Value as AcoustIdKeyTestResultDto)!;
+        Assert.True(savedResult.Accepted);
+        Assert.Contains("saved key", savedResult.Message);
+
+        await controller.TestAcoustIdKey(new TestAcoustIdKeyRequest("  typed-key "), CancellationToken.None);
+        Assert.Equal(["saved-key", "typed-key"], checker.Tested);
+        // Testing never saves.
+        Assert.Equal("saved-key", await service.GetEffectiveAcoustIdKeyAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ResumingAJobClearsItsPauseReason()
+    {
+        var root = new LibraryRoot { Name = "Music", Path = "/music" };
+        _db.LibraryRoots.Add(root);
+        var job = new IdentificationJob
+        {
+            LibraryRootId = root.Id,
+            Status = IdentificationJobStatus.Paused,
+            Stage = IdentificationJobRunner.AdministratorPauseStage,
+            ErrorSummary = "AcoustID rejected the key."
+        };
+        _db.IdentificationJobs.Add(job);
+        await _db.SaveChangesAsync();
+
+        var controller = new IdentificationController(_db, Options.Create(new IdentificationOptions { Enabled = true }),
+            Service(), NullLogger<IdentificationController>.Instance);
+        await controller.ResumeJob(job.Id, CancellationToken.None);
+
+        var resumed = await _db.IdentificationJobs.AsNoTracking().SingleAsync();
+        Assert.Equal(IdentificationJobStatus.Queued, resumed.Status);
+        Assert.Null(resumed.ErrorSummary);
+        Assert.Equal("Queued", resumed.Stage);
+    }
+
+    private ServerSettingsController Controller(IServerSettingsService service, IAcoustIdClient checker) =>
+        new(service, checker, _db, NullLogger<ServerSettingsController>.Instance);
+
+    private sealed class KeyChecker(bool accepts = true, bool unreachable = false) : IAcoustIdClient
+    {
+        public List<string> Tested { get; } = [];
+
+        public Task<string> LookupJsonAsync(string apiKey, string fingerprint, int durationSeconds, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<bool> IsKeyAcceptedAsync(string apiKey, CancellationToken ct)
+        {
+            Tested.Add(apiKey);
+            return unreachable
+                ? Task.FromException<bool>(new IdentificationStepException(IdentificationErrorCategory.AcoustIdLookup, retryable: true, "AcoustID could not be reached."))
+                : Task.FromResult(accepts);
+        }
     }
 
     [Fact]

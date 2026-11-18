@@ -4,7 +4,7 @@ import { PlayerProvider, usePlayer, type Track } from './PlayerContext';
 import { streamUrl } from '../api/client';
 
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
-vi.mock('../api/client', () => ({ streamUrl: vi.fn() }));
+vi.mock('../api/client', () => ({ streamUrl: vi.fn(), reportPlay: vi.fn() }));
 let player: ReturnType<typeof usePlayer>;
 let audio: FakeAudio;
 class FakeAudio extends EventTarget {

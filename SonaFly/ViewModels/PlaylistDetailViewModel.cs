@@ -64,7 +64,7 @@ public partial class PlaylistDetailViewModel : LibraryViewModelBase, IQueryAttri
         if (item == null || Playlist?.Items == null) return;
         var queue = Playlist.Items.Select(i => new TrackDto(
             i.TrackId, i.TrackTitle, i.ArtistName, i.AlbumTitle,
-            null, null, null, i.DurationSeconds, null, null
+            i.AlbumId, null, null, i.DurationSeconds, i.ArtworkId, null
         )).ToList();
         var track = queue.FirstOrDefault(t => t.Id == item.TrackId);
         if (track != null) _player.Play(track, queue);

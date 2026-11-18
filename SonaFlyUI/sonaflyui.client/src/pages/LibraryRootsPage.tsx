@@ -15,10 +15,16 @@ function IdentificationCard() {
     const status = useQuery({ queryKey: ['identification-status'], queryFn: () => identificationApi.status().then(r => r.data) });
     const [keyInput, setKeyInput] = useState('');
     const refresh = () => { qc.invalidateQueries({ queryKey: ['identification-status'] }); };
+    // Saving checks the key with AcoustID first; a verified key also resumes jobs paused for the key.
     const saveKey = useMutation({
-        mutationFn: () => settingsApi.saveAcoustIdKey(keyInput.trim()),
-        meta: { successMessage: 'AcoustID key saved. Online lookups are now available.' },
-        onSuccess: () => { setKeyInput(''); refresh(); },
+        mutationFn: () => settingsApi.saveAcoustIdKey(keyInput.trim()).then(r => r.data),
+        meta: { successMessage: 'AcoustID key saved.' },
+        onSuccess: () => { setKeyInput(''); testKey.reset(); refresh(); qc.invalidateQueries({ queryKey: ['identification-jobs'] }); },
+    });
+    const testKey = useMutation({
+        mutationFn: () => settingsApi.testAcoustIdKey(keyInput.trim()).then(r => r.data),
+        meta: { successMessage: 'Key check finished.' },
+        onMutate: () => { saveKey.reset(); },
     });
     const clearKey = useMutation({
         mutationFn: () => settingsApi.clearAcoustIdKey(),
@@ -43,18 +49,23 @@ function IdentificationCard() {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{data.message}</Typography>
             {data.blockers.map(b => <Alert key={b} severity="warning" sx={{ mt: 1 }}>{b}</Alert>)}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }} sx={{ mt: 2 }}>
-                <TextField fullWidth type="password" autoComplete="new-password" label="AcoustID client key"
-                    value={keyInput} onChange={e => { saveKey.reset(); setKeyInput(e.target.value); }}
-                    placeholder={data.acoustIdConfigured ? 'Key is set — enter a new one to replace it' : 'Paste the key from acoustid.org'}
-                    helperText="Saved encrypted. To use a configuration-file key instead, clear the stored one." />
+                <TextField fullWidth type="password" autoComplete="new-password" label="AcoustID application key"
+                    value={keyInput} onChange={e => { saveKey.reset(); testKey.reset(); setKeyInput(e.target.value); }}
+                    placeholder={data.acoustIdConfigured ? 'Key is set — enter a new one to replace it' : 'Paste your application key'}
+                    helperText={<>Use an application key from <a href="https://acoustid.org/new-application" target="_blank" rel="noreferrer">acoustid.org/new-application</a>, not the personal API key on your account page. Keys are checked with AcoustID before saving and stored encrypted.</>} />
                 <Stack direction="row" gap={1} sx={{ whiteSpace: 'nowrap' }}>
+                    <Button variant="outlined" disabled={testKey.isPending || (!keyInput.trim() && !data.acoustIdConfigured)}
+                        onClick={() => testKey.mutate()}>{testKey.isPending ? 'Testing…' : keyInput.trim() ? 'Test key' : 'Test saved key'}</Button>
                     <Button variant="contained" disabled={saveKey.isPending || !keyInput.trim()}
-                        onClick={() => saveKey.mutate()}>{saveKey.isPending ? 'Saving…' : 'Save key'}</Button>
+                        onClick={() => saveKey.mutate()}>{saveKey.isPending ? 'Checking…' : 'Save key'}</Button>
                     <Button variant="outlined" color="warning" disabled={clearKey.isPending || !data.acoustIdConfigured || data.acoustIdSource !== 'Database'}
                         onClick={() => void clearStoredKey()}>Clear</Button>
                 </Stack>
             </Stack>
             {saveKey.isError && <Alert severity="error" sx={{ mt: 2 }}>{errorMessage(saveKey.error)}</Alert>}
+            {saveKey.data && <Alert severity={saveKey.data.verified ? 'success' : 'warning'} sx={{ mt: 2 }}>{saveKey.data.message}</Alert>}
+            {testKey.isError && <Alert severity="error" sx={{ mt: 2 }}>{errorMessage(testKey.error)}</Alert>}
+            {testKey.data && <Alert severity={!testKey.data.checked ? 'warning' : testKey.data.accepted ? 'success' : 'error'} sx={{ mt: 2 }}>{testKey.data.message}</Alert>}
         </>}
     </CardContent></Card>;
 }

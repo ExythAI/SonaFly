@@ -191,7 +191,12 @@ public partial class MiniPlayerControl : ContentView
     private async void OnMediaOpened(object? sender, EventArgs e)
     {
         _mediaOpened = true;
-        if (OwnsPlayback) _player?.ReportDuration(Player.Duration.TotalSeconds);
+        if (OwnsPlayback && _player != null)
+        {
+            _player.ReportDuration(Player.Duration.TotalSeconds);
+            // The stream opened, so this is a real listen rather than a skipped-past track.
+            _ = _player.ReportCurrentPlayAsync();
+        }
         if (_pendingSeek is double position)
         {
             _pendingSeek = null;

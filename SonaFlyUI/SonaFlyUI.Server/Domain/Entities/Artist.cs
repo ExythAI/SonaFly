@@ -4,6 +4,9 @@ public class Artist : EntityBase
 {
     public string Name { get; set; } = string.Empty;
     public string? SortName { get; set; }
+
+    /// <summary>Name folded for searching; kept in step by the database context.</summary>
+    public string SearchName { get; set; } = string.Empty;
     public string? MusicBrainzId { get; set; }
     public Guid? ArtworkId { get; set; }
 

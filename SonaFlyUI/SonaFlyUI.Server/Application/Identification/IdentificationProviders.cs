@@ -97,6 +97,14 @@ public sealed record AcoustIdResult(string AcoustId, double Score, IReadOnlyList
 public interface IAcoustIdClient
 {
     Task<string> LookupJsonAsync(string apiKey, string fingerprint, int durationSeconds, CancellationToken ct);
+
+    /// <summary>
+    /// Asks AcoustID whether it accepts <paramref name="apiKey"/> for lookups,
+    /// using a lookup that cannot match anything. Returns true when accepted,
+    /// false when rejected; throws a retryable step exception when AcoustID
+    /// cannot be reached, so "unknown" is never reported as "invalid".
+    /// </summary>
+    Task<bool> IsKeyAcceptedAsync(string apiKey, CancellationToken ct);
 }
 
 public sealed record MusicBrainzRecording(

@@ -63,6 +63,19 @@
                 </VerticalStackLayout>
             </Border>
 
+            <!-- Streaming quality -->
+            <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 16" Stroke="Transparent" Padding="16">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="STREAMING QUALITY" FontSize="10" TextColor="#9AA0A6" CharacterSpacing="2" />
+                    <Picker ItemsSource="{Binding StreamQualityOptions}"
+                            SelectedIndex="{Binding StreamQualityIndex}"
+                            TextColor="#E8EAED" BackgroundColor="#252540"
+                            SemanticProperties.Description="Streaming quality" />
+                    <Label Text="Smaller streams are MP3 copies the server makes of lossless files. They use about a tenth of the data. The first play of a track may take a few seconds longer to start."
+                           FontSize="11" TextColor="#9AA0A6" />
+                </VerticalStackLayout>
+            </Border>
+
             <!-- Change Password -->
             <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 16" Stroke="Transparent" Padding="16">
                 <VerticalStackLayout Spacing="10">

@@ -24,6 +24,7 @@ const PlaylistsPage = lazy(() => import('./pages/PlaylistsPage'));
 const MixedTapePage = lazy(() => import('./pages/MixedTapePage'));
 const SystemPage = lazy(() => import('./pages/SystemPage'));
 const RestrictionsPage = lazy(() => import('./pages/RestrictionsPage'));
+const IdentificationReviewPage = lazy(() => import('./pages/IdentificationReviewPage'));
 const AuditoriumsPage = lazy(() => import('./pages/AuditoriumsPage'));
 
 const queryClient = new QueryClient({
@@ -75,6 +76,7 @@ const App: React.FC = () => (
                             <Route path="mixed-tapes" element={<MixedTapePage />} />
                             <Route path="system" element={<SystemPage />} />
                             <Route path="restrictions" element={<AdminRoute><RestrictionsPage /></AdminRoute>} />
+                            <Route path="identification-review" element={<AdminRoute><IdentificationReviewPage /></AdminRoute>} />
                             <Route path="auditoriums" element={<AuditoriumsPage />} />
                         </Route>
                     </Routes>

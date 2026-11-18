@@ -140,6 +140,10 @@ namespace SonaFlyUI.Server.Migrations
                     b.Property<DateTime>("ModifiedUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SearchTitle")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SortTitle")
                         .HasMaxLength(512)
                         .HasColumnType("TEXT");
@@ -297,6 +301,10 @@ namespace SonaFlyUI.Server.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SearchName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SortName")
                         .HasMaxLength(512)
                         .HasColumnType("TEXT");
@@ -425,6 +433,31 @@ namespace SonaFlyUI.Server.Migrations
                     b.HasIndex("AuditoriumId", "Position");
 
                     b.ToTable("AuditoriumQueueItems");
+                });
+
+            modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.FavoriteTrack", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TrackId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TrackId");
+
+                    b.HasIndex("UserId", "TrackId")
+                        .IsUnique();
+
+                    b.ToTable("FavoriteTracks");
                 });
 
             modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Genre", b =>
@@ -1638,6 +1671,78 @@ namespace SonaFlyUI.Server.Migrations
                     b.ToTable("MixedTapeItems");
                 });
 
+            modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.ParkedLibraryLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("AddedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FilePath")
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ModifiedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("RestrictionType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TargetArtistName")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetName")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FilePath");
+
+                    b.HasIndex("Kind");
+
+                    b.ToTable("ParkedLibraryLinks");
+                });
+
+            modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.PlayEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("PlayedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TrackId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TrackId");
+
+                    b.HasIndex("UserId", "PlayedUtc");
+
+                    b.ToTable("PlayEvents");
+                });
+
             modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Playlist", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1916,6 +2021,14 @@ namespace SonaFlyUI.Server.Migrations
                     b.Property<int?>("SampleRateHz")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("SearchGenre")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SearchTitle")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SortTitle")
                         .HasColumnType("TEXT");
 
@@ -2128,6 +2241,25 @@ namespace SonaFlyUI.Server.Migrations
                     b.Navigation("Track");
                 });
 
+            modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.FavoriteTrack", b =>
+                {
+                    b.HasOne("SonaFlyUI.Server.Domain.Entities.Track", "Track")
+                        .WithMany()
+                        .HasForeignKey("TrackId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SonaFlyUI.Server.Domain.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Track");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Identification.AcousticFingerprint", b =>
                 {
                     b.HasOne("SonaFlyUI.Server.Domain.Entities.Identification.TrackFileRevision", "FileRevision")
@@ -2287,6 +2419,25 @@ namespace SonaFlyUI.Server.Migrations
                     b.Navigation("MixedTape");
 
                     b.Navigation("Track");
+                });
+
+            modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.PlayEvent", b =>
+                {
+                    b.HasOne("SonaFlyUI.Server.Domain.Entities.Track", "Track")
+                        .WithMany()
+                        .HasForeignKey("TrackId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SonaFlyUI.Server.Domain.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Track");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SonaFlyUI.Server.Domain.Entities.Playlist", b =>

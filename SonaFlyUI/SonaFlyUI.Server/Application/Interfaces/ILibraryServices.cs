@@ -32,6 +32,13 @@ public interface IArtworkService
 {
     Task<ArtworkResult?> ExtractAndStoreAsync(AudioMetadata metadata, string filePath, CancellationToken ct);
     Task<FileStreamResultModel?> OpenArtworkAsync(Guid artworkId, CancellationToken ct);
+
+    /// <summary>
+    /// Opens a cover scaled down to about <paramref name="size"/> pixels. An implementation
+    /// that makes no thumbnails serves the original.
+    /// </summary>
+    Task<FileStreamResultModel?> OpenThumbnailAsync(Guid artworkId, int? size, CancellationToken ct) =>
+        OpenArtworkAsync(artworkId, ct);
 }
 
 public interface ILibraryIndexService

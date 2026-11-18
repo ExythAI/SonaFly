@@ -61,7 +61,7 @@ const AlbumDetailPage: React.FC = () => {
                     bgcolor: 'rgba(124,77,255,0.1)', position: 'relative'
                 }}>
                     {album.artworkId ? (
-                        <Box component="img" src={artworkUrl(album.artworkId)} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <Box component="img" src={artworkUrl(album.artworkId, 640)} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                             <Typography variant="h1" sx={{ color: 'rgba(255,255,255,0.08)' }}>♪</Typography>

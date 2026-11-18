@@ -23,6 +23,16 @@ public record IdentificationKeyStateDto(bool Configured, string Source);
 
 public record SetAcoustIdKeyRequest(string Key);
 
+/// <param name="Key">The key to check; when empty, the key the server currently uses.</param>
+public record TestAcoustIdKeyRequest(string? Key);
+
+/// <param name="Checked">False when AcoustID could not be reached, so no verdict exists.</param>
+/// <param name="Accepted">True when AcoustID accepts the key for lookups.</param>
+public record AcoustIdKeyTestResultDto(bool Checked, bool Accepted, string Message);
+
+/// <param name="Verified">True when AcoustID confirmed the key before it was saved.</param>
+public record IdentificationKeySaveResultDto(bool Configured, string Source, bool Verified, string Message);
+
 /// <param name="Mode">
 /// "Unanalyzed" (the default) picks tracks whose current file has no completed
 /// analysis; "Root" re-analyses every present track, reusing stored hashes,

@@ -21,7 +21,10 @@ public class ArtworkUrlConverter : IValueConverter
             if (string.IsNullOrEmpty(baseUrl))
                 return null;
 
-            return $"{baseUrl}/api/artwork/{artworkId}";
+            // Lists and grids get a thumbnail. A page that shows the cover large passes
+            // the size it wants as the converter parameter.
+            var size = parameter is string text && int.TryParse(text, out var asked) ? asked : 320;
+            return $"{baseUrl}/api/artwork/{artworkId}?size={size}";
         }
         catch
         {

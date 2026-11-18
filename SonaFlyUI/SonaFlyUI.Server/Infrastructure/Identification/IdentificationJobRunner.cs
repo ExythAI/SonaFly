@@ -18,6 +18,9 @@ namespace SonaFlyUI.Server.Infrastructure.Identification;
 /// </summary>
 public sealed class IdentificationJobRunner
 {
+    /// <summary>Stage of a job paused because an administrator must fix something, such as the AcoustID key.</summary>
+    public const string AdministratorPauseStage = "Paused: administrator action needed";
+
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(15);
 
     private readonly IServiceScopeFactory _scopeFactory;
@@ -202,7 +205,7 @@ public sealed class IdentificationJobRunner
                 .Where(j => j.Id == job.Id && j.Status == IdentificationJobStatus.Running)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(j => j.Status, IdentificationJobStatus.Paused)
-                    .SetProperty(j => j.Stage, "Paused: administrator action needed")
+                    .SetProperty(j => j.Stage, AdministratorPauseStage)
                     .SetProperty(j => j.ErrorSummary, administratorFailure.Message)
                     .SetProperty(j => j.ModifiedUtc, DateTime.UtcNow), CancellationToken.None);
             _logger.LogWarning("Identification job {JobId} paused: {Reason}", job.Id, administratorFailure.Message);

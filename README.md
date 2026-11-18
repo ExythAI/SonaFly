@@ -404,6 +404,17 @@ All configuration is done via environment variables in `docker-compose.yml`:
 | `SonaFly__Deployment__KnownProxies__0` | Address of a trusted reverse proxy | _(none)_ |
 | `SonaFly__Deployment__KnownNetworks__0` | CIDR of trusted reverse proxies | _(none)_ |
 | `ASPNETCORE_URLS` | Listen URL | `http://+:8080` |
+| `SonaFly__Backup__Enabled` | Take a database snapshot on a schedule | `true` |
+| `SonaFly__Backup__Directory` | Where snapshots are written | `backups` beside the database |
+| `SonaFly__Backup__IntervalHours` | Time between scheduled snapshots | `24` |
+| `SonaFly__Backup__Retain` | Scheduled snapshots to keep | `7` |
+| `SonaFly__Scan__AutoScanIntervalHours` | Rescan each music folder this long after its last scan; `0` turns it off | `24` |
+| `SonaFly__LogRoot` | Directory for daily log files; empty turns file logging off | `/app/data/logs` |
+| `SonaFly__LogRetainDays` | Days of log files to keep | `14` |
+| `SonaFly__Transcoding__Enabled` | Offer compressed MP3 streams of lossless files (needs `ffmpeg`) | `true` |
+| `SonaFly__Transcoding__BitrateKbps` | Bitrate of a compressed stream | `192` |
+| `SonaFly__Transcoding__CacheRoot` | Where compressed copies are cached | `/app/data/transcodes` |
+| `SonaFly__Transcoding__MaxCacheMegabytes` | Size at which the cache is trimmed | `2048` |
 
 ---
 
@@ -421,6 +432,34 @@ All persistent data is stored in Docker volumes:
 `sonafly_artwork` is a cache and rebuilds itself. The other three are worth keeping.
 
 ### Backup
+
+**The server backs its database up by itself.** It writes a consistent snapshot every
+night, before every library purge, and before any upgrade that changes the database
+schema. Snapshots go to a `backups` folder beside the database (inside the `sonafly_db`
+volume, so they survive the container being replaced), named
+`sonafly-<date>-<time>-<reason>.db`. The last seven nightly snapshots and the last five
+of each other kind are kept. Administrators can see them, and take one on demand, on the
+System page.
+
+These protect against a mistaken purge or a bad upgrade. They sit on the same disk as
+the database, so they do **not** protect against losing that disk: copy the `backups`
+folder somewhere else as well.
+
+To restore a snapshot, stop the application and put the snapshot in the database's place:
+
+```bash
+cd docker
+docker compose stop sonafly
+docker run --rm -v docker_sonafly_db:/db alpine sh -c \
+  'rm -f /db/sonafly.db-wal /db/sonafly.db-shm && cp /db/backups/<snapshot>.db /db/sonafly.db'
+docker compose start sonafly
+```
+
+A purge keeps playlists and mixed tapes and remembers what was in them, along with
+favourites and content restrictions. They are re-attached automatically as a rescan
+finds the same files, so restoring a snapshot is only needed if those files are gone.
+
+The rest of this section is for taking a copy by hand.
 
 Copying `sonafly.db` out of a running container is **not** a backup. SQLite keeps recent
 writes in a `-wal` file beside the main database, so a copy of `sonafly.db` alone can be

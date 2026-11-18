@@ -319,6 +319,10 @@ public class IdentificationController : ControllerBase
         }
 
         job.Status = IdentificationJobStatus.Queued;
+        job.Stage = "Queued";
+        // The pause reason no longer applies; if the problem persists the
+        // runner pauses again with a fresh message.
+        job.ErrorSummary = null;
         job.CancelRequested = false;
         job.ModifiedUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -522,18 +526,6 @@ public class IdentificationController : ControllerBase
             .ToListAsync(ct);
 
         return Ok(groups.Select(g => new DuplicateGroupDto(g.Sha256, g.Count, g.TrackIds)).ToList());
-    }
-
-    /// <summary>
-    /// Catalog apply placeholder. Returns 501 until milestone D lands with
-    /// proposal revalidation, field overlays, and the audit journal.
-    /// </summary>
-    [HttpPost("proposals/apply-catalog")]
-    public ActionResult ApplyCatalog()
-    {
-        return StatusCode(
-            StatusCodes.Status501NotImplemented,
-            new { message = "Catalog apply is not available in this build. Review and approval arrive in a later milestone." });
     }
 
     private Task<IdentificationJob?> ActiveJobForRootAsync(Guid rootId, Guid? excludeJobId, CancellationToken ct) =>

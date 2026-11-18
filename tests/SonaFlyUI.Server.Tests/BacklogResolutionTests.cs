@@ -498,6 +498,9 @@ public sealed class BacklogResolutionTests : IDisposable
             NullLogger<TrackEndSchedulerService>.Instance);
 
         return new SystemController(_db, config, new LibraryMaintenanceGate(), scheduler,
+            new LibraryLinkPreserver(_db, NullLogger<LibraryLinkPreserver>.Instance),
+            new DatabaseBackupService(config, Microsoft.Extensions.Options.Options.Create(new BackupOptions()),
+                NullLogger<DatabaseBackupService>.Instance),
             NullLogger<SystemController>.Instance);
     }
 

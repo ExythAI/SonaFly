@@ -16,6 +16,9 @@ public class Track : EntityBase
     public int? DiscNumber { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? SortTitle { get; set; }
+
+    /// <summary>Title folded for searching; kept in step by the database context.</summary>
+    public string SearchTitle { get; set; } = string.Empty;
     public Guid? AlbumId { get; set; }
     public Guid? PrimaryArtistId { get; set; }
 
@@ -29,6 +32,9 @@ public class Track : EntityBase
     public Guid? CatalogReleaseId { get; set; }
 
     public string? Genre { get; set; }
+
+    /// <summary>Genre folded for searching; kept in step by the database context.</summary>
+    public string SearchGenre { get; set; } = string.Empty;
     public string MimeType { get; set; } = string.Empty;
     public string? ContentHash { get; set; }
     public DateTime ModifiedUtcSource { get; set; }

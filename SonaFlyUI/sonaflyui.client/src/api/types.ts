@@ -264,3 +264,77 @@ export interface IdentificationJobQueuedDto {
     status: string;
     message: string;
 }
+
+export interface AcoustIdKeyTestResultDto {
+    /** False when AcoustID could not be reached, so there is no verdict. */
+    checked: boolean;
+    accepted: boolean;
+    message: string;
+}
+
+export interface IdentificationKeySaveResultDto {
+    configured: boolean;
+    source: string;
+    verified: boolean;
+    message: string;
+}
+
+// ── Identification review ──
+export interface ReviewItemDto {
+    workItemId: string;
+    trackId: string;
+    candidateId: string;
+    relativePath: string | null;
+    currentTitle: string;
+    currentArtist: string | null;
+    currentAlbum: string | null;
+    proposedTitle: string | null;
+    proposedArtist: string | null;
+    titleChanges: boolean;
+    artistChanges: boolean;
+    score: number | null;
+    confidenceBand: string | null;
+    candidateCount: number;
+    conflicts: string | null;
+}
+
+export interface ReviewPageDto {
+    total: number;
+    highConfidence: number;
+    items: ReviewItemDto[];
+}
+
+export interface ReviewDecision {
+    workItemId: string;
+    candidateId: string;
+    title?: boolean;
+    artist?: boolean;
+}
+
+export interface ReviewOutcomeDto {
+    done: number;
+    skipped: { workItemId: string; reason: string }[];
+}
+
+export interface AppliedChangeDto {
+    proposalId: string;
+    trackId: string;
+    oldTitle: string | null;
+    newTitle: string | null;
+    oldArtist: string | null;
+    newArtist: string | null;
+    appliedUtc: string | null;
+}
+
+// ── Backups ──
+export interface BackupFileDto {
+    fileName: string;
+    sizeBytes: number;
+    createdUtc: string;
+    reason: string;
+}
+
+export interface BackupListDto {
+    directory: string | null;
+    backups: BackupFileDto[];
+}
