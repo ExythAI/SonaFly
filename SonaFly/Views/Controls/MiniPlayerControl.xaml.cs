@@ -10,19 +10,21 @@ public partial class MiniPlayerControl : ContentView
     private AudioPlayerService? _player;
     private MiniPlayerViewModel? _vm;
     private bool _initialized;
-    private bool _isActive;
     private int _sourceRequest;
     private bool _mediaOpened;
     private double? _pendingSeek;
-
-    // Track ALL instances so we can stop old ones when a new track starts
-    private static readonly List<MiniPlayerControl> _allPlayers = [];
-    private static MiniPlayerControl? _activePlayer;
 
     public MiniPlayerControl()
     {
         InitializeComponent();
     }
+
+    /// <summary>
+    /// True while this control's media element holds the stream that is playing. That is
+    /// not the same as being on screen: audio keeps coming from the owner after the user
+    /// changes tab, so the owner is the one that must pause, seek, and advance.
+    /// </summary>
+    private bool OwnsPlayback => _player?.Surfaces.IsOwner(this) == true;
 
     public void Initialize(AudioPlayerService player)
     {
@@ -33,83 +35,36 @@ public partial class MiniPlayerControl : ContentView
         _vm = new MiniPlayerViewModel(player);
         BindingContext = _vm;
 
+        _player.Surfaces.Register(this);
         _player.PropertyChanged += OnPlayerPropertyChanged;
         _player.SeekRequested += OnSeekRequested;
-
-        if (!_allPlayers.Contains(this))
-            _allPlayers.Add(this);
     }
 
     /// <summary>
-    /// Call from OnAppearing. Marks this as the active player.
-    /// Does NOT restart audio — existing playback continues from the previous tab's MediaElement.
+    /// Call from OnAppearing. The next track to start loads here. Playback already
+    /// running on another tab's media element is left alone and stays controllable.
     /// </summary>
-    public void Activate()
-    {
-        if (_activePlayer != null && _activePlayer != this)
-            _activePlayer._isActive = false;
-
-        _activePlayer = this;
-        _isActive = true;
-        // Don't touch the MediaElement — let audio keep playing from wherever it was
-    }
+    public void Activate() => _player?.Surfaces.MarkVisible(this);
 
     /// <summary>
-    /// Call from OnDisappearing. Just marks inactive — does NOT stop audio.
+    /// Call from OnDisappearing. Does not stop audio or give up ownership of it.
     /// </summary>
-    public void Deactivate()
-    {
-        _isActive = false;
-        // Don't stop — audio continues seamlessly
-    }
-
-    /// <summary>
-    /// Stop all MediaElements except the active one. Called before playing a new track.
-    /// </summary>
-    private static void StopAllExceptActive()
-    {
-        foreach (var p in _allPlayers)
-        {
-            if (p != _activePlayer)
-            {
-                try { p.Player.Stop(); p.Player.Source = null; } catch { }
-            }
-        }
-    }
+    public void Deactivate() => _player?.Surfaces.MarkHidden(this);
 
     private void OnPlayerPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (!_isActive) return;
+        if (_player == null) return;
 
         if (e.PropertyName == nameof(AudioPlayerService.StreamVersion))
         {
-            _mediaOpened = false;
-            _pendingSeek = null;
-            var request = ++_sourceRequest;
-            var version = _player?.StreamVersion;
-            MainThread.BeginInvokeOnMainThread(async () =>
-            {
-                StopAllExceptActive();
-                Player.Stop();
-                Player.Source = null;
-                try
-                {
-                    var url = _player == null ? null : await _player.GetCurrentStreamUrlAsync();
-                    if (request != _sourceRequest || !_isActive || version != _player?.StreamVersion) return;
-                    if (!string.IsNullOrEmpty(url)) Player.Source = MediaSource.FromUri(url);
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Unable to load stream: {ex.Message}");
-                    if (request == _sourceRequest) _player?.Pause();
-                }
-            });
+            var version = _player.StreamVersion;
+            MainThread.BeginInvokeOnMainThread(() => OnStreamChanged(version));
         }
         else if (e.PropertyName == nameof(AudioPlayerService.IsPlaying))
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                if (_player == null) return;
+                if (_player == null || OwnsPlayback == false) return;
                 if (_player.IsPlaying)
                     Player.Play();
                 else
@@ -118,9 +73,46 @@ public partial class MiniPlayerControl : ContentView
         }
     }
 
+    /// <summary>
+    /// Every control hears about a new stream. Exactly one loads it and becomes the
+    /// owner; the rest release whatever they were playing, so two never sound at once.
+    /// </summary>
+    private async void OnStreamChanged(int version)
+    {
+        if (_player == null) return;
+
+        var request = ++_sourceRequest;
+        _mediaOpened = false;
+        _pendingSeek = null;
+
+        try
+        {
+            Player.Stop();
+            Player.Source = null;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Unable to release the previous stream: {ex.Message}");
+        }
+
+        if (ReferenceEquals(_player.Surfaces.ResolveLoader(version), this) == false) return;
+
+        try
+        {
+            var url = await _player.GetCurrentStreamUrlAsync();
+            if (request != _sourceRequest || version != _player.StreamVersion || OwnsPlayback == false) return;
+            if (!string.IsNullOrEmpty(url)) Player.Source = MediaSource.FromUri(url);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Unable to load stream: {ex.Message}");
+            if (request == _sourceRequest) _player.Pause();
+        }
+    }
+
     private void OnMediaEnded(object? sender, EventArgs e)
     {
-        if (_isActive && _player?.HasNext == true)
+        if (OwnsPlayback && _player?.HasNext == true)
             _player.Next();
     }
 
@@ -138,9 +130,9 @@ public partial class MiniPlayerControl : ContentView
 
     private void OnSeekRequested(double positionSeconds)
     {
-        if (!_isActive) return;
         MainThread.BeginInvokeOnMainThread(async () =>
         {
+            if (OwnsPlayback == false) return;
             if (!_mediaOpened)
             {
                 _pendingSeek = positionSeconds;

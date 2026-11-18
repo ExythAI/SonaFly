@@ -19,5 +19,6 @@
     <Compile Include="../../SonaFly/Services/ServerStorageService.cs" Link="Mobile/ServerStorageService.cs" />
     <Compile Include="../../SonaFly/Models/ServerConfig.cs" Link="Mobile/ServerConfig.cs" />
     <Compile Include="../../SonaFly/Models/ApiModels.cs" Link="Mobile/ApiModels.cs" />
+    <Compile Include="../../SonaFly/Services/PlaybackSurfaceCoordinator.cs" Link="Mobile/PlaybackSurfaceCoordinator.cs" />
   </ItemGroup>
 </Project>

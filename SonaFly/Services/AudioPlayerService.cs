@@ -31,6 +31,9 @@ public partial class AudioPlayerService : ObservableObject
 
     public event Action<double>? SeekRequested;
 
+    /// <summary>Which of the per-tab player surfaces owns playback.</summary>
+    public PlaybackSurfaceCoordinator Surfaces { get; } = new();
+
     public AudioPlayerService(SonaFlyApiClient api) => _api = api;
 
     public void SeekTo(double positionSeconds)
