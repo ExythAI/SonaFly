@@ -24,8 +24,47 @@ public partial class AudioPlayerService : ObservableObject
 
     private void NotifyStreamChanged()
     {
+        // The new track starts from the top. Its length comes from the catalog until
+        // the media element reports the real one.
+        _seekTarget = null;
+        Position = 0;
+        Duration = PlaybackProgress.Sanitize(CurrentTrack?.DurationSeconds ?? 0);
+
         StreamVersion++;
         OnPropertyChanged(nameof(StreamVersion));
+    }
+
+    // ── Progress, reported by the surface that owns playback ──
+
+    private static readonly TimeSpan SeekSettleWindow = TimeSpan.FromSeconds(5);
+    private (double Position, DateTime RequestedUtc)? _seekTarget;
+
+    /// <summary>
+    /// Records where the media element says playback is. Small changes are dropped, and
+    /// so are positions from before a seek the element has not carried out yet, which
+    /// would otherwise make the progress bar jump back and then forward again.
+    /// </summary>
+    public void ReportPosition(double positionSeconds)
+    {
+        if (_seekTarget is { } target)
+        {
+            var settled = Math.Abs(positionSeconds - target.Position) <= 2;
+            var expired = DateTime.UtcNow - target.RequestedUtc > SeekSettleWindow;
+            if (settled == false && expired == false) return;
+            _seekTarget = null;
+        }
+
+        if (PlaybackProgress.IsWorthReporting(Position, positionSeconds))
+        {
+            Position = PlaybackProgress.Clamp(positionSeconds, Duration);
+        }
+    }
+
+    /// <summary>Records the track length the media element measured, when it has one.</summary>
+    public void ReportDuration(double durationSeconds)
+    {
+        var duration = PlaybackProgress.Sanitize(durationSeconds);
+        if (duration > 0) Duration = duration;
     }
     public string? CurrentArtworkUrl => CurrentTrack?.ArtworkId != null ? _api.ArtworkUrl(CurrentTrack.ArtworkId) : null;
 
@@ -38,6 +77,8 @@ public partial class AudioPlayerService : ObservableObject
 
     public void SeekTo(double positionSeconds)
     {
+        positionSeconds = PlaybackProgress.Clamp(positionSeconds, Duration);
+        _seekTarget = (positionSeconds, DateTime.UtcNow);
         Position = positionSeconds;
         SeekRequested?.Invoke(positionSeconds);
     }

@@ -1,3 +1,4 @@
+using CommunityToolkit.Maui.Core;
 using CommunityToolkit.Maui.Views;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -101,7 +102,16 @@ public partial class MiniPlayerControl : ContentView
         {
             var url = await _player.GetCurrentStreamUrlAsync();
             if (request != _sourceRequest || version != _player.StreamVersion || OwnsPlayback == false) return;
-            if (!string.IsNullOrEmpty(url)) Player.Source = MediaSource.FromUri(url);
+            if (!string.IsNullOrEmpty(url))
+            {
+                // What the lock screen and the media notification show. Set before the
+                // source so the first notification already carries the right track.
+                var track = _player.CurrentTrack;
+                Player.MetadataTitle = track?.Title ?? string.Empty;
+                Player.MetadataArtist = track?.ArtistName ?? string.Empty;
+                Player.MetadataArtworkUrl = _player.CurrentArtworkUrl ?? string.Empty;
+                Player.Source = MediaSource.FromUri(url);
+            }
         }
         catch (Exception ex)
         {
@@ -116,9 +126,41 @@ public partial class MiniPlayerControl : ContentView
             _player.Next();
     }
 
+    private void OnPositionChanged(object? sender, MediaPositionChangedEventArgs e)
+    {
+        var seconds = e.Position.TotalSeconds;
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (OwnsPlayback) _player?.ReportPosition(seconds);
+        });
+    }
+
+    // ── Seek slider ──
+    // While a finger is on the slider, playback progress must not move it; the seek
+    // happens once, on release, rather than on every value the drag passes through.
+
+    private void OnSeekDragStarted(object? sender, EventArgs e)
+    {
+        if (_vm != null) _vm.IsScrubbing = true;
+    }
+
+    private void OnSeekValueChanged(object? sender, ValueChangedEventArgs e)
+    {
+        if (_vm?.IsScrubbing == true) _vm.ScrubPosition = e.NewValue;
+    }
+
+    private void OnSeekDragCompleted(object? sender, EventArgs e)
+    {
+        if (_vm == null) return;
+        var target = SeekSlider.Value;
+        _vm.IsScrubbing = false;
+        _player?.SeekTo(target);
+    }
+
     private async void OnMediaOpened(object? sender, EventArgs e)
     {
         _mediaOpened = true;
+        if (OwnsPlayback) _player?.ReportDuration(Player.Duration.TotalSeconds);
         if (_pendingSeek is double position)
         {
             _pendingSeek = null;
@@ -152,12 +194,32 @@ public partial class MiniPlayerViewModel : ObservableObject
     public MiniPlayerViewModel(AudioPlayerService player)
     {
         _player = player;
-        _player.PropertyChanged += (_, _) =>
+        _player.PropertyChanged += (_, e) =>
         {
-            OnPropertyChanged(nameof(HasTrack));
-            OnPropertyChanged(nameof(TrackTitle));
-            OnPropertyChanged(nameof(ArtistName));
-            OnPropertyChanged(nameof(PlayPauseIcon));
+            switch (e.PropertyName)
+            {
+                // Position arrives several times a second; refresh only what it affects.
+                case nameof(AudioPlayerService.Position):
+                    if (IsScrubbing == false)
+                    {
+                        OnPropertyChanged(nameof(SliderPosition));
+                        OnPropertyChanged(nameof(PositionText));
+                    }
+                    break;
+                case nameof(AudioPlayerService.Duration):
+                    OnPropertyChanged(nameof(HasDuration));
+                    OnPropertyChanged(nameof(SliderMaximum));
+                    OnPropertyChanged(nameof(DurationText));
+                    break;
+                default:
+                    OnPropertyChanged(nameof(HasTrack));
+                    OnPropertyChanged(nameof(TrackTitle));
+                    OnPropertyChanged(nameof(ArtistName));
+                    OnPropertyChanged(nameof(ArtworkUrl));
+                    OnPropertyChanged(nameof(HasArtwork));
+                    OnPropertyChanged(nameof(PlayPauseIcon));
+                    break;
+            }
         };
     }
 
@@ -165,6 +227,46 @@ public partial class MiniPlayerViewModel : ObservableObject
     public string TrackTitle => _player.CurrentTrack?.Title ?? "";
     public string ArtistName => _player.CurrentTrack?.ArtistName ?? "";
     public string PlayPauseIcon => _player.IsPlaying ? "⏸" : "▶";
+    public string? ArtworkUrl => _player.CurrentArtworkUrl;
+    public bool HasArtwork => string.IsNullOrEmpty(_player.CurrentArtworkUrl) == false;
+
+    // ── Progress ──
+
+    public bool HasDuration => _player.Duration > 0;
+
+    /// <summary>A slider needs a maximum above its minimum even before the length is known.</summary>
+    public double SliderMaximum => _player.Duration > 0 ? _player.Duration : 1;
+
+    public double SliderPosition => PlaybackProgress.Clamp(_player.Position, SliderMaximum);
+
+    /// <summary>Shows where the finger is while dragging, and the playback position otherwise.</summary>
+    public string PositionText => PlaybackProgress.Format(IsScrubbing ? ScrubPosition : _player.Position);
+
+    public string DurationText => HasDuration ? PlaybackProgress.Format(_player.Duration) : "–:––";
+
+    private bool _isScrubbing;
+    public bool IsScrubbing
+    {
+        get => _isScrubbing;
+        set
+        {
+            if (_isScrubbing == value) return;
+            _isScrubbing = value;
+            if (value) _scrubPosition = _player.Position;
+            OnPropertyChanged(nameof(PositionText));
+        }
+    }
+
+    private double _scrubPosition;
+    public double ScrubPosition
+    {
+        get => _scrubPosition;
+        set
+        {
+            _scrubPosition = value;
+            OnPropertyChanged(nameof(PositionText));
+        }
+    }
 
     [RelayCommand]
     private void PlayPause()

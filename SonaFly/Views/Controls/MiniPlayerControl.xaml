@@ -9,8 +9,12 @@
         <!-- Mini player bar -->
         <Border BackgroundColor="#1A1A2E" StrokeShape="RoundRectangle 0" Stroke="Transparent" Padding="12,8"
                 IsVisible="{Binding HasTrack}">
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                <BoxView WidthRequest="42" HeightRequest="42" BackgroundColor="#252540" CornerRadius="6" />
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" RowSpacing="2">
+                <!-- Artwork, over a placeholder that shows while it loads or when there is none -->
+                <Border WidthRequest="42" HeightRequest="42" BackgroundColor="#252540" Stroke="Transparent"
+                        StrokeShape="RoundRectangle 6" Padding="0">
+                    <Image Source="{Binding ArtworkUrl}" Aspect="AspectFill" IsVisible="{Binding HasArtwork}" />
+                </Border>
                 <VerticalStackLayout Grid.Column="1" Margin="10,0,0,0" VerticalOptions="Center">
                     <Label Text="{Binding TrackTitle}" FontSize="13" FontAttributes="Bold" TextColor="#E8EAED"
                            LineBreakMode="TailTruncation" MaxLines="1" />
@@ -23,6 +27,24 @@
                         TextColor="#FF6B6B" Padding="8,4" Command="{Binding PlayPauseCommand}" />
                 <Button Grid.Column="4" Text="⏭" FontSize="18" BackgroundColor="Transparent" TextColor="#9AA0A6"
                         Padding="8,4" Command="{Binding NextCommand}" />
+
+                <!-- Progress and seek. Maximum is listed before Value so the value is
+                     never clamped against the default maximum of 1. -->
+                <Grid Grid.Row="1" Grid.ColumnSpan="5" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                    <Label Text="{Binding PositionText}" FontSize="10" TextColor="#9AA0A6"
+                           VerticalOptions="Center" WidthRequest="38" HorizontalTextAlignment="End" />
+                    <Slider x:Name="SeekSlider" Grid.Column="1" Minimum="0"
+                            Maximum="{Binding SliderMaximum}"
+                            Value="{Binding SliderPosition, Mode=OneWay}"
+                            IsEnabled="{Binding HasDuration}"
+                            MinimumTrackColor="#FF6B6B" MaximumTrackColor="#33334D" ThumbColor="#FF6B6B"
+                            SemanticProperties.Description="Seek within the track"
+                            DragStarted="OnSeekDragStarted"
+                            ValueChanged="OnSeekValueChanged"
+                            DragCompleted="OnSeekDragCompleted" />
+                    <Label Grid.Column="2" Text="{Binding DurationText}" FontSize="10" TextColor="#9AA0A6"
+                           VerticalOptions="Center" WidthRequest="38" />
+                </Grid>
             </Grid>
         </Border>
 
@@ -31,6 +53,7 @@
                               HeightRequest="0" WidthRequest="0"
                               ShouldAutoPlay="True"
                               MediaOpened="OnMediaOpened"
+                              PositionChanged="OnPositionChanged"
                               MediaEnded="OnMediaEnded" />
     </Grid>
 </ContentView>
