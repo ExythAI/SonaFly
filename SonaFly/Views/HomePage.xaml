@@ -76,6 +76,8 @@
             </VerticalStackLayout>
         </ScrollView>
 
+        <controls:ErrorBanner Margin="16,12,16,0" />
+
         <controls:MiniPlayerControl x:Name="MiniPlayer" Grid.Row="1" />
     </Grid>
 </ContentPage>

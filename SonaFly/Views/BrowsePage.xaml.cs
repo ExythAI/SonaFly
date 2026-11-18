@@ -32,7 +32,7 @@ public partial class BrowsePage : ContentPage
         base.OnAppearing();
         MiniPlayer.Initialize(_player);
         MiniPlayer.Activate();
-        if (_vm.Artists.Count == 0)
+        if (_vm.Artists.Items.Count == 0)
             await _vm.LoadArtistsCommand.ExecuteAsync(null);
     }
 

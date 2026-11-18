@@ -5,7 +5,7 @@ using SonaFly.Services;
 
 namespace SonaFly.ViewModels;
 
-public partial class PlaylistsViewModel : ObservableObject
+public partial class PlaylistsViewModel : LibraryViewModelBase
 {
     private readonly SonaFlyApiClient _api;
     private readonly AudioPlayerService _player;
@@ -14,7 +14,6 @@ public partial class PlaylistsViewModel : ObservableObject
     [ObservableProperty] private List<MixedTapeDto> _mixedTapes = [];
     [ObservableProperty] private PlaylistDto? _selectedPlaylist;
     [ObservableProperty] private MixedTapeDto? _selectedMixedTape;
-    [ObservableProperty] private bool _isBusy;
 
     [ObservableProperty] private bool _showList = true;
     [ObservableProperty] private bool _showPlaylistDetail;
@@ -40,47 +39,39 @@ public partial class PlaylistsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task LoadAsync()
+    private Task LoadAsync() => RunAsync("Couldn't load playlists.", RefreshAsync);
+
+    /// <summary>Fetches both lists and shows them. Throws when either request fails.</summary>
+    private async Task RefreshAsync()
     {
-        IsBusy = true;
-        try
-        {
-            var playlistsTask = _api.GetPlaylistsAsync();
-            var tapesTask = _api.GetMixedTapesAsync();
-            Playlists = (await playlistsTask) ?? [];
-            MixedTapes = (await tapesTask) ?? [];
-            SetView("list");
-        }
-        catch { }
-        finally { IsBusy = false; }
+        var playlistsTask = _api.GetPlaylistsAsync();
+        var tapesTask = _api.GetMixedTapesAsync();
+        await Task.WhenAll(playlistsTask, tapesTask);
+        Playlists = (await playlistsTask) ?? [];
+        MixedTapes = (await tapesTask) ?? [];
+        SetView("list");
     }
 
     [RelayCommand]
     private async Task SelectPlaylistAsync(PlaylistDto? playlist)
     {
         if (playlist == null) return;
-        IsBusy = true;
-        try
+        await RunAsync($"Couldn't open {playlist.Name}.", async () =>
         {
             SelectedPlaylist = await _api.GetPlaylistByIdAsync(playlist.Id.ToString());
             SetView("playlistDetail");
-        }
-        catch { }
-        finally { IsBusy = false; }
+        });
     }
 
     [RelayCommand]
     private async Task SelectMixedTapeAsync(MixedTapeDto? tape)
     {
         if (tape == null) return;
-        IsBusy = true;
-        try
+        await RunAsync($"Couldn't open {tape.Name}.", async () =>
         {
             SelectedMixedTape = await _api.GetMixedTapeByIdAsync(tape.Id.ToString());
             SetView("mixedTapeDetail");
-        }
-        catch { }
-        finally { IsBusy = false; }
+        });
     }
 
     [RelayCommand]
@@ -95,30 +86,27 @@ public partial class PlaylistsViewModel : ObservableObject
     private async Task CreatePlaylistAsync()
     {
         if (string.IsNullOrWhiteSpace(NewPlaylistName)) return;
-        IsBusy = true;
-        try
-        {
-            await _api.CreatePlaylistAsync(NewPlaylistName.Trim(), NewPlaylistDescription.Trim());
-            NewPlaylistName = string.Empty;
-            NewPlaylistDescription = string.Empty;
-            await LoadAsync(); // refresh list
-        }
-        catch { }
-        finally { IsBusy = false; }
+
+        // The typed name is kept if this fails, so it can be tried again.
+        var created = await RunAsync("Couldn't create the playlist.", () =>
+            _api.CreatePlaylistAsync(NewPlaylistName.Trim(), NewPlaylistDescription.Trim()));
+        if (created == false) return;
+
+        NewPlaylistName = string.Empty;
+        NewPlaylistDescription = string.Empty;
+        await RunAsync("The playlist was created, but the list couldn't be refreshed.", RefreshAsync);
     }
 
     [RelayCommand]
     private async Task DeletePlaylistAsync()
     {
-        if (SelectedPlaylist == null) return;
-        IsBusy = true;
-        try
-        {
-            await _api.DeletePlaylistAsync(SelectedPlaylist.Id);
-            await LoadAsync();
-        }
-        catch { }
-        finally { IsBusy = false; }
+        if (SelectedPlaylist is not { } playlist) return;
+
+        var deleted = await RunAsync($"Couldn't delete {playlist.Name}.", () =>
+            _api.DeletePlaylistAsync(playlist.Id));
+        if (deleted == false) return;
+
+        await RunAsync("The playlist was deleted, but the list couldn't be refreshed.", RefreshAsync);
     }
 
     [RelayCommand]

@@ -18,7 +18,9 @@
         </HorizontalStackLayout>
 
         <!-- Artist List -->
-        <CollectionView Grid.Row="1" ItemsSource="{Binding Artists}" SelectionMode="Single"
+        <CollectionView Grid.Row="1" ItemsSource="{Binding Artists.Items}" SelectionMode="Single"
+                        RemainingItemsThreshold="12"
+                        RemainingItemsThresholdReachedCommand="{Binding LoadMoreArtistsCommand}"
                         IsVisible="{Binding ShowArtists}" Margin="0,12,0,0"
                         SelectionChangedCommand="{Binding SelectArtistCommand}"
                         SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}">
@@ -47,7 +49,9 @@
         </CollectionView>
 
         <!-- Album Grid -->
-        <CollectionView Grid.Row="1" ItemsSource="{Binding Albums}" SelectionMode="Single"
+        <CollectionView Grid.Row="1" ItemsSource="{Binding Albums.Items}" SelectionMode="Single"
+                        RemainingItemsThreshold="12"
+                        RemainingItemsThresholdReachedCommand="{Binding LoadMoreAlbumsCommand}"
                         IsVisible="{Binding ShowAlbums}" Margin="0,12,0,0"
                         SelectionChangedCommand="{Binding SelectAlbumCommand}"
                         SelectionChangedCommandParameter="{Binding Source={RelativeSource Self}, Path=SelectedItem}">
@@ -104,6 +108,8 @@
         </ScrollView>
 
         <ActivityIndicator Grid.Row="1" IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" VerticalOptions="Center" />
+
+        <controls:ErrorBanner Grid.Row="1" Margin="0,12,0,0" />
 
         <controls:MiniPlayerControl x:Name="MiniPlayer" Grid.Row="2" />
     </Grid>

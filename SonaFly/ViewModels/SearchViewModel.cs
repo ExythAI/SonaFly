@@ -5,7 +5,7 @@ using SonaFly.Services;
 
 namespace SonaFly.ViewModels;
 
-public partial class SearchViewModel : ObservableObject
+public partial class SearchViewModel : LibraryViewModelBase
 {
     private readonly SonaFlyApiClient _api;
     private readonly AudioPlayerService _player;
@@ -14,7 +14,6 @@ public partial class SearchViewModel : ObservableObject
     [ObservableProperty] private List<ArtistDto> _artists = [];
     [ObservableProperty] private List<AlbumDto> _albums = [];
     [ObservableProperty] private List<TrackDto> _tracks = [];
-    [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _hasResults;
 
     public SearchViewModel(SonaFlyApiClient api, AudioPlayerService player)
@@ -27,17 +26,15 @@ public partial class SearchViewModel : ObservableObject
     private async Task SearchAsync()
     {
         if (string.IsNullOrWhiteSpace(Query) || Query.Length < 2) return;
-        IsBusy = true;
-        try
+        var query = Query;
+        await RunAsync("Search failed.", async () =>
         {
-            var result = await _api.SearchAsync(Query, 20);
+            var result = await _api.SearchAsync(query, 20);
             Artists = result?.Artists?.ToList() ?? [];
             Albums = result?.Albums?.ToList() ?? [];
             Tracks = result?.Tracks?.ToList() ?? [];
             HasResults = Artists.Count > 0 || Albums.Count > 0 || Tracks.Count > 0;
-        }
-        catch { }
-        finally { IsBusy = false; }
+        });
     }
 
     [RelayCommand]

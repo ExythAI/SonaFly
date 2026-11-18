@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Shows the page view model's ErrorMessage. Sits over the top of the content it is
+     placed with, and goes away when dismissed or when the next request succeeds. -->
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="SonaFly.Views.Controls.ErrorBanner"
+             IsVisible="{Binding HasError}"
+             VerticalOptions="Start">
+    <Border BackgroundColor="#3A1F28" Stroke="#FF6B6B" StrokeThickness="1"
+            StrokeShape="RoundRectangle 10" Padding="12,8">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <Label Text="{Binding ErrorMessage}" FontSize="13" TextColor="#FFD5D5"
+                   VerticalTextAlignment="Center" LineBreakMode="WordWrap" />
+            <Button Grid.Column="1" Text="✕" FontSize="14" TextColor="#FFD5D5"
+                    BackgroundColor="Transparent" Padding="8,0" MinimumWidthRequest="36"
+                    SemanticProperties.Description="Dismiss this message"
+                    Command="{Binding DismissErrorCommand}" />
+        </Grid>
+    </Border>
+</ContentView>

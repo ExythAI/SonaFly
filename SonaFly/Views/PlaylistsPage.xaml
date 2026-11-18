@@ -157,6 +157,8 @@
 
         <ActivityIndicator Grid.Row="1" IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#FFE66D" VerticalOptions="Center" />
 
+        <controls:ErrorBanner Grid.Row="1" Margin="0,12,0,0" />
+
         <controls:MiniPlayerControl x:Name="MiniPlayer" Grid.Row="2" />
     </Grid>
 </ContentPage>

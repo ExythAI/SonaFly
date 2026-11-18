@@ -23,5 +23,7 @@
     <Compile Include="../../SonaFly/Services/PlaybackSurfaceCoordinator.cs" Link="Mobile/PlaybackSurfaceCoordinator.cs" />
     <Compile Include="../../SonaFly/Services/PlaybackProgress.cs" Link="Mobile/PlaybackProgress.cs" />
     <Compile Include="../../SonaFly/Services/AudioPlayerService.cs" Link="Mobile/AudioPlayerService.cs" />
+    <Compile Include="../../SonaFly/Services/PagedLoader.cs" Link="Mobile/PagedLoader.cs" />
+    <Compile Include="../../SonaFly/Services/ApiErrorMessage.cs" Link="Mobile/ApiErrorMessage.cs" />
   </ItemGroup>
 </Project>

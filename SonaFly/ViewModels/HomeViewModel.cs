@@ -5,13 +5,12 @@ using SonaFly.Services;
 
 namespace SonaFly.ViewModels;
 
-public partial class HomeViewModel : ObservableObject
+public partial class HomeViewModel : LibraryViewModelBase
 {
     private readonly SonaFlyApiClient _api;
     private readonly AudioPlayerService _player;
 
     [ObservableProperty] private List<AlbumDto> _recentAlbums = [];
-    [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private AlbumDetailDto? _selectedAlbumDetail;
     [ObservableProperty] private bool _showAlbumDetail;
 
@@ -25,28 +24,22 @@ public partial class HomeViewModel : ObservableObject
     private async Task LoadAsync()
     {
         if (IsBusy) return;
-        IsBusy = true;
-        try
+        await RunAsync("Couldn't load recent albums.", async () =>
         {
             var result = await _api.GetAlbumsAsync(1, 12);
             RecentAlbums = result?.Items?.ToList() ?? [];
-        }
-        catch { }
-        finally { IsBusy = false; }
+        });
     }
 
     [RelayCommand]
     private async Task SelectAlbumAsync(AlbumDto? album)
     {
         if (album == null) return;
-        IsBusy = true;
-        try
+        await RunAsync($"Couldn't open {album.Title}.", async () =>
         {
             SelectedAlbumDetail = await _api.GetAlbumByIdAsync(album.Id.ToString());
             ShowAlbumDetail = true;
-        }
-        catch { }
-        finally { IsBusy = false; }
+        });
     }
 
     [RelayCommand]
