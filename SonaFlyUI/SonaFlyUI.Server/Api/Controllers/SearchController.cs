@@ -52,7 +52,14 @@ public class SearchController : ControllerBase
             .Where(a => a.SearchName.Contains(term))
             .OrderBy(a => a.Name).ThenBy(a => a.Id)
             .Take(limit)
-            .Select(a => new ArtistDto(a.Id, a.Name, a.SortName, a.ArtworkId,
+            // Pictured, like the artist list, by an album cover when there is no photograph.
+            .Select(a => new ArtistDto(a.Id, a.Name, a.SortName,
+                a.ArtworkId
+                    ?? a.Albums.Where(alb => alb.ArtworkId != null && !restrictions.AlbumIds.Contains(alb.Id))
+                        .OrderBy(alb => alb.Year).ThenBy(alb => alb.Id).Select(alb => alb.ArtworkId).FirstOrDefault()
+                    ?? a.PrimaryTracks.Where(t => t.Album != null && t.Album.ArtworkId != null &&
+                            !restrictions.AlbumIds.Contains(t.AlbumId!.Value))
+                        .OrderBy(t => t.Album!.Year).ThenBy(t => t.Id).Select(t => t.Album!.ArtworkId).FirstOrDefault(),
                 a.Albums.Count(alb => !restrictions.AlbumIds.Contains(alb.Id) &&
                     alb.Tracks.Any(t => t.IsIndexed && !t.IsMissing &&
                         (t.PrimaryArtistId == null || !restrictions.ArtistIds.Contains(t.PrimaryArtistId.Value)) &&
@@ -129,7 +136,7 @@ public class SearchController : ControllerBase
                 t.Album != null ? t.Album.Title : null,
                 t.AlbumId, t.TrackNumber, t.DiscNumber, t.DurationSeconds,
                 t.Album != null ? t.Album.ArtworkId : null,
-                t.Genre))
+                t.Genre, t.PrimaryArtistId))
             .ToListAsync(ct);
 
         return Ok(new SearchResultDto(artists, albums, tracks));

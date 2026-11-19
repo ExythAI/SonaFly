@@ -98,13 +98,13 @@ public class ListeningController(SonaFlyDbContext db) : ControllerBase
                 Album = x.Track.Album != null ? x.Track.Album.Title : null,
                 x.Track.AlbumId, x.Track.TrackNumber, x.Track.DiscNumber, x.Track.DurationSeconds,
                 ArtworkId = x.Track.Album != null ? x.Track.Album.ArtworkId : null,
-                x.Track.Genre, x.Last, x.Count,
+                x.Track.Genre, ArtistId = x.Track.PrimaryArtistId, x.Last, x.Count,
             })
             .ToListAsync(ct);
 
         return Ok(rows.Select(r => new PlayedTrackDto(
             new TrackListItemDto(r.Id, r.Title, r.Artist, r.Album, r.AlbumId, r.TrackNumber, r.DiscNumber,
-                r.DurationSeconds, r.ArtworkId, r.Genre),
+                r.DurationSeconds, r.ArtworkId, r.Genre, r.ArtistId),
             r.Last, r.Count)).ToList());
     }
 
@@ -129,7 +129,21 @@ public class ListeningController(SonaFlyDbContext db) : ControllerBase
                 x.Track.Album != null ? x.Track.Album.Title : null,
                 x.Track.AlbumId, x.Track.TrackNumber, x.Track.DiscNumber, x.Track.DurationSeconds,
                 x.Track.Album != null ? x.Track.Album.ArtworkId : null,
-                x.Track.Genre))
+                x.Track.Genre, x.Track.PrimaryArtistId))
+            .ToListAsync(ct));
+    }
+
+    /// <summary>
+    /// The IDs of every track the caller has marked as a favourite, so a client can show
+    /// which rows of any list are favourites without fetching the tracks themselves.
+    /// </summary>
+    [HttpGet("favorites/ids")]
+    public async Task<ActionResult<List<Guid>>> FavoriteIds(CancellationToken ct)
+    {
+        var userId = CurrentUserId;
+        return Ok(await db.FavoriteTracks.AsNoTracking()
+            .Where(f => f.UserId == userId)
+            .Select(f => f.TrackId)
             .ToListAsync(ct));
     }
 

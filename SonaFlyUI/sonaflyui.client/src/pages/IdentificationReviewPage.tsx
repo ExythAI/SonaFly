@@ -71,16 +71,19 @@ const IdentificationReviewPage: React.FC = () => {
     };
 
     const applyMut = useMutation({
+        meta: { quiet: true },
         mutationFn: (decisions: ReviewDecision[]) => identificationApi.apply(decisions).then(r => r.data),
         onSuccess: outcome => { report('Corrected', outcome); refresh(); },
         onError: err => notify(errorMessage(err), 'error'),
     });
     const rejectMut = useMutation({
+        meta: { quiet: true },
         mutationFn: (decisions: ReviewDecision[]) => identificationApi.reject(decisions).then(r => r.data),
         onSuccess: outcome => { report('Dismissed', outcome); refresh(); },
         onError: err => notify(errorMessage(err), 'error'),
     });
     const revertMut = useMutation({
+        meta: { quiet: true },
         mutationFn: (proposalId: string) => identificationApi.revert(proposalId),
         onSuccess: () => { notify('Change undone.'); refresh(); },
         onError: err => notify(errorMessage(err), 'error'),
@@ -88,6 +91,7 @@ const IdentificationReviewPage: React.FC = () => {
 
     // Every high-confidence match, not just the ones on this page.
     const applyAllHighMut = useMutation({
+        meta: { quiet: true },
         mutationFn: async () => {
             const all: ReviewDecision[] = [];
             for (let offset = 0; ; offset += 200) {
@@ -134,6 +138,7 @@ const IdentificationReviewPage: React.FC = () => {
 
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }} justifyContent="space-between" mb={2}>
                 <ToggleButtonGroup size="small" exclusive value={band} aria-label="Confidence"
+                    sx={{ '& .MuiToggleButton-root': { px: 1.75, textTransform: 'none' } }}
                     onChange={(_, value: string | null) => { if (value !== null) changeBand(value); }}>
                     {BANDS.map(b => <ToggleButton key={b.value} value={b.value}>{b.label}</ToggleButton>)}
                 </ToggleButtonGroup>

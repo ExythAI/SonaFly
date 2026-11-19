@@ -36,6 +36,7 @@ const SystemPage: React.FC = () => {
         enabled: isAdmin,
     });
     const backupMut = useMutation({
+        meta: { quiet: true },
         mutationFn: () => systemApi.createBackup(),
         onSuccess: (res) => {
             setPurgeResult(`Backup written: ${res.data.fileName}`);

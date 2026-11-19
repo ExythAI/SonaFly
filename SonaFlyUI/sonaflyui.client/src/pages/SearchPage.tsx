@@ -1,45 +1,27 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useSearchFilter } from '../hooks/useSearchFilter';
 import { QueryError, EmptyState } from '../components/PageParts';
 import { useQuery } from '@tanstack/react-query';
-import { Box, Typography, TextField, InputAdornment, Card, CardContent, Grid, Chip, CircularProgress, CardActionArea, IconButton } from '@mui/material';
-import { Search as SearchIcon, PlayArrow, Pause } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
-import { browseApi, artworkUrl } from '../api/client';
-import type { TrackListItemDto } from '../api/types.ts';
-import { usePlayer } from '../components/PlayerContext';
+import { Box, Typography, TextField, InputAdornment, Card, CardActionArea, Grid, Chip, CircularProgress, Stack } from '@mui/material';
+import { Search as SearchIcon } from '@mui/icons-material';
+import { browseApi } from '../api/client';
+import { Cover, TrackList, toTrack } from '../components/Music';
 
 const SearchPage: React.FC = () => {
     const { input, setInput, value: query } = useSearchFilter();
-    const navigate = useNavigate();
-    const { play, pause, resume, currentTrack, isPlaying, sharedRoom } = usePlayer();
     const { data, isLoading, isError, error, refetch } = useQuery({
         queryKey: ['search', query],
         queryFn: () => browseApi.search(query, 20).then(r => r.data),
         enabled: query.length >= 2,
     });
-
-    const fmt = (s?: number | null) => {
-        if (!s) return '--';
-        const m = Math.floor(s / 60);
-        return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-    };
-
-    const handlePlayTrack = (t: TrackListItemDto) => {
-        play({
-            id: t.id,
-            title: t.title,
-            artistName: t.artistName,
-            albumTitle: t.albumTitle,
-            artworkId: t.artworkId,
-            durationSeconds: t.durationSeconds,
-        });
-    };
+    const tracks = useMemo(() => (data?.tracks ?? []).map(toTrack), [data]);
+    const nothing = data && !data.artists?.length && !data.albums?.length && !data.tracks?.length;
 
     return (
         <Box>
-            <Typography variant="h4" gutterBottom>Search</Typography>
-            <TextField fullWidth placeholder="Search artists, albums, tracks..."
+            <Typography variant="h4" component="h1" gutterBottom>Search</Typography>
+            <TextField fullWidth autoFocus placeholder="Search artists, albums, tracks..."
                 label="Search music" value={input} onChange={e => setInput(e.target.value)}
                 slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> } }}
                 sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: 3, bgcolor: 'background.paper' } }} />
@@ -48,95 +30,60 @@ const SearchPage: React.FC = () => {
             {query.length < 2 && <EmptyState title="Find your next listen" description="Enter at least two characters to search artists, albums, and tracks." />}
             {isLoading && <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>}
 
-            {!isError && data && (
-                <Grid container spacing={3}>
+            {!isError && data && query.length >= 2 && (
+                <Stack spacing={4}>
                     {data.artists?.length > 0 && (
-                        <Grid size={{ xs: 12 }}>
-                            <Typography variant="h6" gutterBottom>Artists <Chip size="small" label={data.artists.length} sx={{ ml: 1, height: 20 }} /></Typography>
+                        <Box component="section">
+                            <Typography variant="h6" component="h2" gutterBottom>Artists <Chip size="small" label={data.artists.length} sx={{ ml: 1, height: 20 }} /></Typography>
                             <Grid container spacing={1.5}>
-                                {data.artists.map((a) => (
+                                {data.artists.map(a => (
                                     <Grid key={a.id} size={{ xs: 12, sm: 6, md: 4 }}>
-                                        <Card>
-                                            <CardActionArea onClick={() => navigate(`/artists/${a.id}`)}>
-                                                <CardContent sx={{ py: 1.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                    <Box sx={{ width: 40, height: 40, borderRadius: '50%', bgcolor: 'rgba(124,77,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                        <Typography sx={{ color: 'primary.light' }}>{a.name[0]}</Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="subtitle2">{a.name}</Typography>
-                                                        <Typography variant="caption" color="text.secondary">{a.albumCount} albums</Typography>
-                                                    </Box>
-                                                </CardContent>
-                                            </CardActionArea>
-                                        </Card>
+                                        <Card><CardActionArea component={Link} to={`/artists/${a.id}`} sx={{ p: 1.5 }}>
+                                            <Stack direction="row" spacing={1.5} alignItems="center">
+                                                <Cover artworkId={a.artworkId} kind="artist" round size={160} sx={{ width: 48 }} />
+                                                <Box sx={{ minWidth: 0 }}>
+                                                    <Typography variant="subtitle2" noWrap>{a.name}</Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {a.albumCount > 0 ? `${a.albumCount} ${a.albumCount === 1 ? 'album' : 'albums'}` : `${a.trackCount} ${a.trackCount === 1 ? 'track' : 'tracks'}`}
+                                                    </Typography>
+                                                </Box>
+                                            </Stack>
+                                        </CardActionArea></Card>
                                     </Grid>
                                 ))}
                             </Grid>
-                        </Grid>
+                        </Box>
                     )}
                     {data.albums?.length > 0 && (
-                        <Grid size={{ xs: 12 }}>
-                            <Typography variant="h6" gutterBottom>Albums <Chip size="small" label={data.albums.length} sx={{ ml: 1, height: 20 }} /></Typography>
+                        <Box component="section">
+                            <Typography variant="h6" component="h2" gutterBottom>Albums <Chip size="small" label={data.albums.length} sx={{ ml: 1, height: 20 }} /></Typography>
                             <Grid container spacing={1.5}>
-                                {data.albums.map((a) => (
+                                {data.albums.map(a => (
                                     <Grid key={a.id} size={{ xs: 12, sm: 6, md: 4 }}>
-                                        <Card>
-                                            <CardActionArea onClick={() => navigate(`/albums/${a.id}`)}>
-                                                <CardContent sx={{ py: 1.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                    <Box sx={{
-                                                        width: 48, height: 48, borderRadius: 1, overflow: 'hidden', flexShrink: 0,
-                                                        bgcolor: 'rgba(0,229,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                                    }}>
-                                                        {a.artworkId ? (
-                                                            <Box component="img" src={artworkUrl(a.artworkId)} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                        ) : (
-                                                            <Typography sx={{ color: 'rgba(255,255,255,0.15)' }}>♪</Typography>
-                                                        )}
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="subtitle2">{a.title}</Typography>
-                                                        <Typography variant="caption" color="text.secondary">{a.artistName}{a.year ? ` · ${a.year}` : ''}</Typography>
-                                                    </Box>
-                                                </CardContent>
-                                            </CardActionArea>
-                                        </Card>
+                                        <Card><CardActionArea component={Link} to={`/albums/${a.id}`} sx={{ p: 1.5 }}>
+                                            <Stack direction="row" spacing={1.5} alignItems="center">
+                                                <Cover artworkId={a.artworkId} size={160} sx={{ width: 48, borderRadius: 1 }} />
+                                                <Box sx={{ minWidth: 0 }}>
+                                                    <Typography variant="subtitle2" noWrap>{a.title}</Typography>
+                                                    <Typography variant="caption" color="text.secondary" noWrap component="div">
+                                                        {[a.artistName, a.year].filter(Boolean).join(' · ')}
+                                                    </Typography>
+                                                </Box>
+                                            </Stack>
+                                        </CardActionArea></Card>
                                     </Grid>
                                 ))}
                             </Grid>
-                        </Grid>
+                        </Box>
                     )}
-                    {data.tracks?.length > 0 && (
-                        <Grid size={{ xs: 12 }}>
-                            <Typography variant="h6" gutterBottom>Tracks <Chip size="small" label={data.tracks.length} sx={{ ml: 1, height: 20 }} /></Typography>
-                            {data.tracks.map((t) => {
-                                const isCurrent = !sharedRoom && currentTrack?.id === t.id;
-                                return (
-                                    <Card key={t.id} sx={{ mb: 1, ...(isCurrent ? { border: '1px solid', borderColor: 'primary.main', bgcolor: 'rgba(124,77,255,0.08)' } : {}) }}>
-                                        <CardContent sx={{ py: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <Box
-                                                sx={{ cursor: 'pointer', flex: 1 }}
-                                                onClick={() => t.albumId ? navigate(`/albums/${t.albumId}`) : undefined}
-                                            >
-                                                <Typography variant="subtitle2" sx={{ color: isCurrent ? 'primary.light' : 'text.primary' }}>{t.title}</Typography>
-                                                <Typography variant="caption" color="text.secondary">{t.artistName} · {t.albumTitle} · {fmt(t.durationSeconds)}</Typography>
-                                            </Box>
-                                            <IconButton size="small" aria-label={isCurrent && isPlaying ? `Pause ${t.title}` : `Play ${t.title}`} onClick={() => isCurrent ? (isPlaying ? pause() : resume()) : handlePlayTrack(t)}>
-                                                {isCurrent && isPlaying ? (
-                                                    <Pause fontSize="small" sx={{ color: 'primary.light' }} />
-                                                ) : (
-                                                    <PlayArrow fontSize="small" />
-                                                )}
-                                            </IconButton>
-                                        </CardContent>
-                                    </Card>
-                                );
-                            })}
-                        </Grid>
+                    {tracks.length > 0 && (
+                        <Box component="section">
+                            <Typography variant="h6" component="h2" gutterBottom>Tracks <Chip size="small" label={tracks.length} sx={{ ml: 1, height: 20 }} /></Typography>
+                            <Card><TrackList tracks={tracks} showCover /></Card>
+                        </Box>
                     )}
-                    {data && !data.artists?.length && !data.albums?.length && !data.tracks?.length && query.length >= 2 && (
-                        <Grid size={{ xs: 12 }}><Typography color="text.secondary" textAlign="center" sx={{ py: 4 }}>No results found for "{query}"</Typography></Grid>
-                    )}
-                </Grid>
+                    {nothing && <Typography color="text.secondary" textAlign="center" sx={{ py: 4 }}>No results found for “{query}”</Typography>}
+                </Stack>
             )}
         </Box>
     );

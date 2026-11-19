@@ -1,114 +1,130 @@
 import React, { useState } from 'react';
 import { useSearchFilter } from '../hooks/useSearchFilter';
-import { QueryError } from '../components/PageParts';
-import { useQuery } from '@tanstack/react-query';
+import { EmptyState, QueryError } from '../components/PageParts';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
-    Box, Typography, Card, CardContent, Grid, CircularProgress, CardActionArea, Button,
-    TextField, InputAdornment, IconButton, Pagination, Stack
+    Box, Typography, Card, Grid, CircularProgress, Button,
+    TextField, InputAdornment, IconButton, Pagination, Stack, ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Search as SearchIcon, PlayArrow, Pause, ArrowUpward, ArrowDownward } from '@mui/icons-material';
-import { browseApi, artworkUrl } from '../api/client';
+import { browseApi } from '../api/client';
 import type { TrackListItemDto } from '../api/types.ts';
 import { usePlayer } from '../components/PlayerContext';
+import { AlbumGrid, ArtistCard } from '../components/Cards';
+import { FavoriteButton, TrackMenu, toTrack } from '../components/Music';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 60;
+
+/** The filter box and sort choice above a grid. Both live in the URL, so Back restores them. */
+function BrowseControls({ label, filter, onFilter, sort, sorts, onSort }: {
+    label: string; filter: string; onFilter: (value: string) => void;
+    sort: string; sorts: { value: string; label: string }[]; onSort: (value: string) => void;
+}) {
+    return <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }} sx={{ mb: 3 }}>
+        <TextField size="small" label={label} placeholder="Type to filter…" value={filter} onChange={e => onFilter(e.target.value)}
+            slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
+            sx={{ width: { xs: '100%', sm: 300 }, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'background.paper' } }} />
+        <ToggleButtonGroup size="small" exclusive value={sort} aria-label="Sort order"
+            onChange={(_, value: string | null) => { if (value !== null) onSort(value); }}
+            sx={{ '& .MuiToggleButton-root': { px: 1.75, textTransform: 'none' } }}>
+            {sorts.map(s => <ToggleButton key={s.value} value={s.value}>{s.label}</ToggleButton>)}
+        </ToggleButtonGroup>
+    </Stack>;
+}
+
+/** Reads and writes one URL parameter, dropping it when it holds the default. */
+function useUrlChoice(key: string, fallback: string): [string, (value: string) => void] {
+    const [params, setParams] = useSearchParams();
+    const value = params.get(key) ?? fallback;
+    const set = (next: string) => setParams(previous => {
+        const copy = new URLSearchParams(previous);
+        if (next === fallback) copy.delete(key); else copy.set(key, next);
+        return copy;
+    }, { replace: true });
+    return [value, set];
+}
+
+function LoadMore({ shown, total, onMore }: { shown: number; total: number; onMore: () => void }) {
+    if (shown >= total) return null;
+    return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+        <Button variant="outlined" onClick={onMore}>Show more ({shown} of {total})</Button>
+    </Box>;
+}
+
+const ARTIST_SORTS = [{ value: 'name', label: 'A–Z' }, { value: 'tracks', label: 'Most music' }];
 
 const ArtistsPage: React.FC = () => {
-    const navigate = useNavigate();
     const [pageSize, setPageSize] = useState(PAGE_SIZE);
+    const { input, setInput, value: filter } = useSearchFilter();
+    const [sort, setSort] = useUrlChoice('sort', 'name');
     const { data, isLoading, isError, error, refetch } = useQuery({
-        queryKey: ['artists', pageSize],
-        queryFn: () => browseApi.artists(1, pageSize).then(r => r.data)
+        queryKey: ['artists', pageSize, filter, sort],
+        queryFn: () => browseApi.artists(1, pageSize, filter, sort).then(r => r.data),
+        placeholderData: keepPreviousData,
     });
-    const hasMore = (data?.items?.length ?? 0) < (data?.totalCount ?? 0);
+    const artists = data?.items ?? [];
 
     return (
         <Box>
-            <Typography variant="h4" gutterBottom>Artists</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>{data?.totalCount ?? 0} artists in library</Typography>
+            <Typography variant="h4" component="h1" gutterBottom>Artists</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                {data?.totalCount ?? 0} {filter ? `matching “${filter}”` : 'artists in your library'}
+            </Typography>
+            <BrowseControls label="Find an artist" filter={input} onFilter={setInput} sort={sort} sorts={ARTIST_SORTS} onSort={setSort} />
             {isError ? <QueryError error={error} retry={refetch} /> : isLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : (
                 <>
+                    {artists.length === 0 && <EmptyState title="No artists found" description={filter ? 'Nothing matches that. Try fewer letters.' : 'Scan a music folder to fill your library.'} />}
                     <Grid container spacing={2}>
-                        {data?.items?.map((a) => (
-                            <Grid key={a.id} size={{ xs: 6, sm: 4, md: 3, lg: 2 }}>
-                                <Card><CardActionArea onClick={() => navigate(`/artists/${a.id}`)}><CardContent sx={{ textAlign: 'center', py: 3 }}>
-                                    <Box sx={{ width: 64, height: 64, borderRadius: '50%', mx: 'auto', mb: 1.5, bgcolor: 'rgba(124,77,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Typography variant="h5" sx={{ color: 'primary.light' }}>{a.name[0]}</Typography>
-                                    </Box>
-                                    <Typography variant="subtitle2" noWrap>{a.name}</Typography>
-                                    <Typography variant="caption" color="text.secondary">{a.albumCount} albums · {a.trackCount} tracks</Typography>
-                                </CardContent></CardActionArea></Card>
-                            </Grid>
-                        ))}
+                        {artists.map(a => <Grid key={a.id} size={{ xs: 6, sm: 4, md: 3, lg: 2 }}><ArtistCard artist={a} /></Grid>)}
                     </Grid>
-                    {hasMore && (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-                            <Button variant="outlined" onClick={() => setPageSize(s => s + PAGE_SIZE)}>
-                                Load More ({data?.items?.length} of {data?.totalCount})
-                            </Button>
-                        </Box>
-                    )}
+                    <LoadMore shown={artists.length} total={data?.totalCount ?? 0} onMore={() => setPageSize(s => s + PAGE_SIZE)} />
                 </>
             )}
         </Box>
     );
 };
 
+const ALBUM_SORTS = [{ value: 'year', label: 'By year' }, { value: 'recent', label: 'Recently added' }, { value: 'title', label: 'A–Z' }];
+
 const AlbumsPage: React.FC = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const artistId = searchParams.get('artistId') ?? undefined;
     const [pageSize, setPageSize] = useState(PAGE_SIZE);
+    const { input, setInput, value: filter } = useSearchFilter();
+    const [sort, setSort] = useUrlChoice('sort', 'year');
     const { data, isLoading, isError, error, refetch } = useQuery({
-        queryKey: ['albums', artistId, pageSize],
-        queryFn: () => browseApi.albums(1, pageSize, artistId).then(r => r.data)
+        queryKey: ['albums', artistId, pageSize, sort, filter],
+        queryFn: () => browseApi.albums(1, pageSize, artistId, sort, filter).then(r => r.data),
+        placeholderData: keepPreviousData,
     });
     const { data: artistData } = useQuery({
         queryKey: ['artist', artistId],
         queryFn: () => browseApi.artistById(artistId!).then(r => r.data),
         enabled: !!artistId,
     });
-    const hasMore = (data?.items?.length ?? 0) < (data?.totalCount ?? 0);
+    const albums = data?.items ?? [];
 
     return (
         <Box>
-            <Typography variant="h4" gutterBottom>
+            <Typography variant="h4" component="h1" gutterBottom>
                 {artistData ? `${artistData.name} — Albums` : 'Albums'}
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                {data?.totalCount ?? 0} albums{artistData ? '' : ' in library'}
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                {data?.totalCount ?? 0} {filter ? `matching “${filter}”` : `albums${artistData ? '' : ' in your library'}`}
                 {artistId && (
                     <Typography component="span" variant="body2" sx={{ ml: 1, color: 'primary.light', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }} onClick={() => navigate('/albums')}>
                         Show all albums
                     </Typography>
                 )}
             </Typography>
+            <BrowseControls label="Find an album or artist" filter={input} onFilter={setInput} sort={sort} sorts={ALBUM_SORTS} onSort={setSort} />
             {isError ? <QueryError error={error} retry={refetch} /> : isLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : (
                 <>
-                    <Grid container spacing={2}>
-                        {data?.items?.map((a) => (
-                            <Grid key={a.id} size={{ xs: 6, sm: 4, md: 3, lg: 2 }}>
-                                <Card><CardActionArea onClick={() => navigate(`/albums/${a.id}`)}>
-                                    <Box sx={{ pt: '100%', position: 'relative', bgcolor: 'rgba(0,229,255,0.08)' }}>
-                                        {a.artworkId && <Box component="img" src={artworkUrl(a.artworkId)} sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
-                                        {!a.artworkId && <Box sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }}><Typography variant="h4" sx={{ color: 'rgba(255,255,255,0.1)' }}>♪</Typography></Box>}
-                                    </Box>
-                                    <CardContent sx={{ py: 1.5 }}>
-                                        <Typography variant="subtitle2" noWrap>{a.title}</Typography>
-                                        <Typography variant="caption" color="text.secondary" noWrap>{a.artistName ?? 'Various'}{a.year ? ` · ${a.year}` : ''}</Typography>
-                                    </CardContent>
-                                </CardActionArea></Card>
-                            </Grid>
-                        ))}
-                    </Grid>
-                    {hasMore && (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-                            <Button variant="outlined" onClick={() => setPageSize(s => s + PAGE_SIZE)}>
-                                Load More ({data?.items?.length} of {data?.totalCount})
-                            </Button>
-                        </Box>
-                    )}
+                    {albums.length === 0 && <EmptyState title="No albums found" description={filter ? 'Nothing matches that. Try fewer letters.' : 'Scan a music folder to fill your library.'} />}
+                    <AlbumGrid albums={albums} />
+                    <LoadMore shown={albums.length} total={data?.totalCount ?? 0} onMore={() => setPageSize(s => s + PAGE_SIZE)} />
                 </>
             )}
         </Box>
@@ -124,8 +140,9 @@ const COLUMNS = [
     { key: 'duration', label: 'Duration', align: 'right' as const },
 ];
 
+const cellLink: React.CSSProperties = { color: '#82B1FF', textDecoration: 'none' };
+
 const TracksPage: React.FC = () => {
-    const navigate = useNavigate();
     const { play, pause, resume, currentTrack, isPlaying, sharedRoom } = usePlayer();
     const [params, setParams] = useSearchParams();
     const page = Math.max(1, Number(params.get('page')) || 1);
@@ -136,10 +153,10 @@ const TracksPage: React.FC = () => {
 
     const { data, isLoading, isError, error, refetch } = useQuery({
         queryKey: ['tracks', page, sortBy, sortDir, filter],
-        queryFn: () => browseApi.tracks(page, PAGE_SIZE, sortBy, sortDir, filter).then(r => r.data),
+        queryFn: () => browseApi.tracks(page, 50, sortBy, sortDir, filter).then(r => r.data),
     });
 
-    const totalPages = Math.ceil((data?.totalCount ?? 0) / PAGE_SIZE);
+    const totalPages = Math.ceil((data?.totalCount ?? 0) / 50);
 
     const handleSort = (col: string) => setParams(previous => {
         const next = new URLSearchParams(previous);
@@ -155,16 +172,7 @@ const TracksPage: React.FC = () => {
         return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
     };
 
-    const handlePlayTrack = (t: TrackListItemDto) => {
-        const allTracks = data?.items?.map((tr) => ({
-            id: tr.id, title: tr.title, artistName: tr.artistName,
-            albumTitle: tr.albumTitle, artworkId: tr.artworkId, durationSeconds: tr.durationSeconds,
-        })) ?? [];
-        play({
-            id: t.id, title: t.title, artistName: t.artistName,
-            albumTitle: t.albumTitle, artworkId: t.artworkId, durationSeconds: t.durationSeconds,
-        }, allTracks);
-    };
+    const handlePlayTrack = (t: TrackListItemDto) => play(toTrack(t), data?.items?.map(toTrack) ?? []);
 
     const thStyle = (col: string): React.CSSProperties => ({
         textAlign: col === 'duration' ? 'right' : 'left',
@@ -182,7 +190,7 @@ const TracksPage: React.FC = () => {
 
     return (
         <Box>
-            <Typography variant="h4" gutterBottom>Tracks</Typography>
+            <Typography variant="h4" component="h1" gutterBottom>Tracks</Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3 }}>
                 <Typography variant="body2" color="text.secondary">
                     {data?.totalCount ?? 0} tracks{filter ? ` matching "${filter}"` : ''}
@@ -212,6 +220,7 @@ const TracksPage: React.FC = () => {
                                     <IconButton aria-label={selected && isPlaying ? `Pause ${track.title}` : `Play ${track.title}`} onClick={() => selected ? (isPlaying ? pause() : resume()) : handlePlayTrack(track)}>{selected && isPlaying ? <Pause /> : <PlayArrow />}</IconButton>
                                     <Box minWidth={0} flex={1}><Typography variant="body2" fontWeight={600} noWrap>{track.title}</Typography><Typography variant="caption" color="text.secondary" noWrap component="div">{track.artistName || 'Unknown artist'}</Typography></Box>
                                     <Typography variant="caption" color="text.secondary">{fmt(track.durationSeconds)}</Typography>
+                                    <TrackMenu track={toTrack(track)} />
                                 </Stack>;
                             })}
                             {!data?.items?.length && <Typography textAlign="center" color="text.secondary" p={3}>No matching tracks.</Typography>}
@@ -226,6 +235,7 @@ const TracksPage: React.FC = () => {
                                                 <Button size="small" color="inherit" onClick={() => handleSort(col.key)}>{col.label}<SortIcon col={col.key} /></Button>
                                             </th>
                                         ))}
+                                        <th style={{ width: 84 }}><span style={{ position: 'absolute', left: -9999 }}>Actions</span></th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -246,18 +256,22 @@ const TracksPage: React.FC = () => {
                                                     </IconButton>
                                                 </td>
                                                 <td style={{ padding: '10px 16px', fontWeight: 500, fontSize: 14, color: isCurrent ? '#B388FF' : '#E8EAED' }}>{t.title}</td>
-                                                <td style={{ padding: '10px 16px', fontSize: 13, color: '#9AA0A6' }}>{t.artistName ?? '—'}</td>
-                                                <td style={{ padding: '10px 16px', fontSize: 13, cursor: t.albumId ? 'pointer' : 'default' }}
-                                                    onClick={() => t.albumId && navigate(`/albums/${t.albumId}`)}>
-                                                    <span style={{ color: t.albumId ? '#82B1FF' : '#9AA0A6' }}>{t.albumTitle ?? '—'}</span>
+                                                <td style={{ padding: '10px 16px', fontSize: 13, color: '#9AA0A6' }}>
+                                                    {t.artistId ? <Link to={`/artists/${t.artistId}`} style={cellLink}>{t.artistName ?? '—'}</Link> : t.artistName ?? '—'}
+                                                </td>
+                                                <td style={{ padding: '10px 16px', fontSize: 13, color: '#9AA0A6' }}>
+                                                    {t.albumId ? <Link to={`/albums/${t.albumId}`} style={cellLink}>{t.albumTitle ?? '—'}</Link> : t.albumTitle ?? '—'}
                                                 </td>
                                                 <td style={{ padding: '10px 16px', fontSize: 13, color: '#9AA0A6' }}>{t.genre ?? '—'}</td>
                                                 <td style={{ padding: '10px 16px', fontSize: 13, color: '#9AA0A6', textAlign: 'right' }}>{fmt(t.durationSeconds)}</td>
+                                                <td style={{ padding: '2px 8px', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                                                    <FavoriteButton track={t} /><TrackMenu track={toTrack(t)} />
+                                                </td>
                                             </tr>
                                         );
                                     })}
                                     {(!data?.items?.length) && (
-                                        <tr><td colSpan={6} style={{ padding: '32px 16px', textAlign: 'center', color: '#9AA0A6' }}>
+                                        <tr><td colSpan={7} style={{ padding: '32px 16px', textAlign: 'center', color: '#9AA0A6' }}>
                                             {filter ? `No tracks matching "${filter}"` : 'No tracks found'}
                                         </td></tr>
                                     )}

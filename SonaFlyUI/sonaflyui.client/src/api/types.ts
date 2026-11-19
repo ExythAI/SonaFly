@@ -44,6 +44,8 @@ export interface TrackListItemDto {
     durationSeconds: number | null;
     artworkId: Guid | null;
     genre: string | null;
+    /** Absent from servers older than the one that added it. */
+    artistId?: Guid | null;
 }
 
 export interface AlbumDetailDto {
@@ -112,6 +114,8 @@ export interface PlaylistItemDto {
     albumTitle: string | null;
     durationSeconds: number | null;
     sortOrder: number;
+    albumId?: Guid | null;
+    artworkId?: Guid | null;
 }
 
 export interface PlaylistDto {
@@ -337,4 +341,12 @@ export interface BackupFileDto {
 export interface BackupListDto {
     directory: string | null;
     backups: BackupFileDto[];
+}
+
+// ── Listening ──
+/** A track with when the signed-in user last played it and how often. */
+export interface PlayedTrackDto {
+    track: TrackListItemDto;
+    lastPlayedUtc: IsoDateTime;
+    playCount: number;
 }

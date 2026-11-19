@@ -259,4 +259,86 @@ public sealed class ListeningAndSearchTests : IDisposable
         Assert.IsType<NotFoundResult>(await controller.ReportPlay(new ReportPlayRequest(track.Id), CancellationToken.None));
         Assert.IsType<NotFoundResult>(await controller.AddFavorite(track.Id, CancellationToken.None));
     }
+
+    // ── Browsing for the web UI ──
+
+    [Fact]
+    public async Task AlbumsCanBeFilteredByTitleOrArtistIgnoringAccents()
+    {
+        AddTrack("a", artist: "Björk", album: "Homogénic").Album!.AlbumArtist = _db.Artists.Local.Single(a => a.Name == "Björk");
+        AddTrack("b", album: "Unrelated");
+        _db.SaveChanges();
+        var controller = new AlbumsController(_db) { ControllerContext = ContextFor(_user) };
+
+        Assert.Equal("Homogénic", Assert.Single(Value(await controller.GetAll(filter: "homogenic")).Items).Title);
+        Assert.Equal("Homogénic", Assert.Single(Value(await controller.GetAll(filter: "BJORK")).Items).Title);
+        Assert.Equal(2, Value(await controller.GetAll(filter: "  ")).TotalCount);
+    }
+
+    [Fact]
+    public async Task ArtistsCanBeFilteredAndOrderedByHowMuchMusicTheyHave()
+    {
+        AddTrack("one", artist: "Aardvark");
+        var prolific = AddTrack("two", artist: "Zebra").PrimaryArtist!;
+        _db.Tracks.Add(new Track
+        {
+            LibraryRootId = _root.Id, FilePath = "/music/z2.mp3", FileName = "z2.mp3", FileExtension = ".mp3",
+            Title = "three", MimeType = "audio/mpeg", IsIndexed = true, PrimaryArtist = prolific,
+        });
+        _db.SaveChanges();
+        var controller = new ArtistsController(_db) { ControllerContext = ContextFor(_user) };
+
+        Assert.Equal(["Aardvark", "Zebra"], Value(await controller.GetAll()).Items.Select(a => a.Name));
+        Assert.Equal(["Zebra", "Aardvark"], Value(await controller.GetAll(sort: "tracks")).Items.Select(a => a.Name));
+        Assert.Equal("Zebra", Assert.Single(Value(await controller.GetAll(filter: "zeb")).Items).Name);
+    }
+
+    [Fact]
+    public async Task AnArtistWithoutAPhotographIsPicturedByAnAlbumCoverTheyAreAllowedToSee()
+    {
+        var early = new ArtworkAsset { StoragePath = "aa/early.jpg", MimeType = "image/jpeg", Hash = "early" };
+        var late = new ArtworkAsset { StoragePath = "bb/late.jpg", MimeType = "image/jpeg", Hash = "late" };
+        _db.ArtworkAssets.AddRange(early, late);
+        var first = AddTrack("a", artist: "Band", album: "Debut");
+        var artist = first.PrimaryArtist!;
+        first.Album!.AlbumArtist = artist; first.Album.Year = 1980; first.Album.ArtworkId = early.Id;
+        var second = AddTrack("b", album: "Follow-up");
+        second.PrimaryArtist = artist; second.Album!.AlbumArtist = artist; second.Album.Year = 1990; second.Album.ArtworkId = late.Id;
+        _db.SaveChanges();
+        var controller = new ArtistsController(_db) { ControllerContext = ContextFor(_user) };
+
+        Assert.Equal(early.Id, Value(await controller.GetById(artist.Id, CancellationToken.None)).ArtworkId);
+
+        // With the earliest album restricted, its cover must not be the one shown.
+        _db.UserRestrictions.Add(new UserRestriction { UserId = _user.Id, RestrictionType = RestrictionType.Album, TargetId = first.Album.Id });
+        _db.SaveChanges();
+        Assert.Equal(late.Id, Value(await controller.GetById(artist.Id, CancellationToken.None)).ArtworkId);
+
+        var search = new SearchController(_db) { ControllerContext = ContextFor(_user) };
+        Assert.Equal(late.Id, Assert.Single(Value(await search.Search("band")).Artists).ArtworkId);
+    }
+
+    [Fact]
+    public async Task TrackResultsCarryTheArtistSoItsNameCanLinkToTheArtist()
+    {
+        var track = AddTrack("Song", artist: "Someone");
+        var tracks = new TracksController(_db) { ControllerContext = ContextFor(_user) };
+        var search = new SearchController(_db) { ControllerContext = ContextFor(_user) };
+
+        Assert.Equal(track.PrimaryArtistId, Assert.Single(Value(await tracks.GetAll()).Items).ArtistId);
+        Assert.Equal(track.PrimaryArtistId, Assert.Single(Value(await search.Search("song")).Tracks).ArtistId);
+    }
+
+    [Fact]
+    public async Task FavouriteIdsListEveryFavouriteOfTheCallerOnly()
+    {
+        var mine = AddTrack("Mine");
+        var theirs = AddTrack("Theirs");
+        _db.FavoriteTracks.AddRange(
+            new FavoriteTrack { UserId = _user.Id, TrackId = mine.Id },
+            new FavoriteTrack { UserId = _other.Id, TrackId = theirs.Id });
+        _db.SaveChanges();
+
+        Assert.Equal([mine.Id], Value(await Listening(_user).FavoriteIds(CancellationToken.None)));
+    }
 }

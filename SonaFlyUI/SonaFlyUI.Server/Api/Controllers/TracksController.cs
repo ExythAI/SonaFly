@@ -84,7 +84,7 @@ public class TracksController : ControllerBase
                 t.Album != null ? t.Album.Title : null,
                 t.AlbumId, t.TrackNumber, t.DiscNumber, t.DurationSeconds,
                 t.Album != null ? t.Album.ArtworkId : null,
-                t.Genre
+                t.Genre, t.PrimaryArtistId
             ))
             .ToListAsync(ct);
 
@@ -103,7 +103,7 @@ public class TracksController : ControllerBase
                 t.Album != null ? t.Album.Title : null,
                 t.AlbumId, t.TrackNumber, t.DiscNumber, t.DurationSeconds,
                 t.Album != null ? t.Album.ArtworkId : null,
-                t.Genre
+                t.Genre, t.PrimaryArtistId
             ))
             .FirstOrDefaultAsync(ct);
 

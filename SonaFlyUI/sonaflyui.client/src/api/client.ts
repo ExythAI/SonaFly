@@ -9,7 +9,7 @@ import type {
     IdentificationKeyStateDto, IdentificationStatusDto,
     LibraryRootDto, MixedTapeDto, PaginatedResult, PlaylistDto, ScanJobDto, SearchResultDto,
     SystemStatusDto, TrackListItemDto, UserInfoDto, UserRestrictionDto,
-    AppliedChangeDto, BackupFileDto, BackupListDto, ReviewDecision, ReviewOutcomeDto, ReviewPageDto,
+    AppliedChangeDto, BackupFileDto, BackupListDto, PlayedTrackDto, ReviewDecision, ReviewOutcomeDto, ReviewPageDto,
 } from './types.ts';
 
 const api = axios.create({
@@ -216,9 +216,11 @@ export const scansApi = {
 
 // ── Browse ──
 export const browseApi = {
-    artists: (page = 1, pageSize = 50) => api.get<PaginatedResult<ArtistDto>>(`/artists?page=${page}&pageSize=${pageSize}`),
+    artists: (page = 1, pageSize = 50, filter = '', sort = '') =>
+        api.get<PaginatedResult<ArtistDto>>('/artists', { params: { page, pageSize, filter: filter || undefined, sort: sort || undefined } }),
     artistById: (id: string) => api.get<ArtistDto>(`/artists/${id}`),
-    albums: (page = 1, pageSize = 50, artistId?: string) => api.get<PaginatedResult<AlbumDto>>(`/albums?page=${page}&pageSize=${pageSize}${artistId ? `&artistId=${artistId}` : ''}`),
+    albums: (page = 1, pageSize = 50, artistId?: string, sort = '', filter = '') =>
+        api.get<PaginatedResult<AlbumDto>>('/albums', { params: { page, pageSize, artistId, sort: sort || undefined, filter: filter || undefined } }),
     albumById: (id: string) => api.get<AlbumDetailDto>(`/albums/${id}`),
     tracks: (page = 1, pageSize = 50, sortBy = 'title', sortDir = 'asc', filter = '', artistId = '') =>
         api.get<PaginatedResult<TrackListItemDto>>(`/tracks?page=${page}&pageSize=${pageSize}&sortBy=${sortBy}&sortDir=${sortDir}${filter ? `&filter=${encodeURIComponent(filter)}` : ''}${artistId ? `&artistId=${artistId}` : ''}`),
@@ -322,4 +324,13 @@ export const streamUrl = async (trackId: string): Promise<string> => {
 // allowed to interrupt playback: a failure here is ignored.
 export const reportPlay = (trackId: string): void => {
     void api.post('/me/plays', { trackId }).catch(() => undefined);
+};
+
+export const listeningApi = {
+    recentlyPlayed: (limit = 12) => api.get<PlayedTrackDto[]>('/me/recently-played', { params: { limit } }),
+    mostPlayed: (limit = 12, days?: number) => api.get<PlayedTrackDto[]>('/me/most-played', { params: { limit, days } }),
+    favorites: () => api.get<TrackListItemDto[]>('/me/favorites'),
+    favoriteIds: () => api.get<string[]>('/me/favorites/ids'),
+    addFavorite: (trackId: string) => api.put(`/me/favorites/${trackId}`),
+    removeFavorite: (trackId: string) => api.delete(`/me/favorites/${trackId}`),
 };

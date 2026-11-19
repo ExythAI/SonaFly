@@ -21,6 +21,8 @@ const AlbumDetailPage = lazy(() => import('./pages/AlbumDetailPage'));
 const ArtistDetailPage = lazy(() => import('./pages/ArtistDetailPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const PlaylistsPage = lazy(() => import('./pages/PlaylistsPage'));
+const PlaylistDetailPage = lazy(() => import('./pages/PlaylistDetailPage'));
+const FavoritesPage = lazy(() => import('./pages/FavoritesPage'));
 const MixedTapePage = lazy(() => import('./pages/MixedTapePage'));
 const SystemPage = lazy(() => import('./pages/SystemPage'));
 const RestrictionsPage = lazy(() => import('./pages/RestrictionsPage'));
@@ -29,8 +31,9 @@ const AuditoriumsPage = lazy(() => import('./pages/AuditoriumsPage'));
 
 const queryClient = new QueryClient({
     mutationCache: new MutationCache({
-        onError: error => { notify(errorMessage(error), 'error'); },
-        onSuccess: (_data, _variables, _result, mutation) => { notify(String(mutation.meta?.successMessage ?? 'Changes saved.')); },
+        // A mutation that reports its own outcome sets meta.quiet, so it is not announced twice.
+        onError: (error, _variables, _context, mutation) => { if (!mutation.meta?.quiet) notify(errorMessage(error), 'error'); },
+        onSuccess: (_data, _variables, _result, mutation) => { if (!mutation.meta?.quiet) notify(String(mutation.meta?.successMessage ?? 'Changes saved.')); },
     }),
     defaultOptions: {
         queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30000 },
@@ -73,6 +76,8 @@ const App: React.FC = () => (
                             <Route path="tracks" element={<TracksPage />} />
                             <Route path="search" element={<SearchPage />} />
                             <Route path="playlists" element={<PlaylistsPage />} />
+                            <Route path="playlists/:id" element={<PlaylistDetailPage />} />
+                            <Route path="favorites" element={<FavoritesPage />} />
                             <Route path="mixed-tapes" element={<MixedTapePage />} />
                             <Route path="system" element={<SystemPage />} />
                             <Route path="restrictions" element={<AdminRoute><RestrictionsPage /></AdminRoute>} />

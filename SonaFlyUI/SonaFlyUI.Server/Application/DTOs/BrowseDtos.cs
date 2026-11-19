@@ -26,7 +26,10 @@ public record TrackListItemDto(
     int? DiscNumber,
     double? DurationSeconds,
     Guid? ArtworkId,
-    string? Genre
+    string? Genre,
+    // After Genre so existing positional readers keep working. Lets a client link the
+    // artist name to the artist page.
+    Guid? ArtistId = null
 );
 
 public record GenreDto(Guid Id, string Name, int TrackCount);

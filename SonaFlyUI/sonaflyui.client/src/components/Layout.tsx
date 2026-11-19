@@ -1,19 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Box, Drawer, Toolbar, Typography, List, ListItemButton, ListItemIcon, ListItemText, IconButton, Divider, Avatar, Button, Stack } from '@mui/material';
-import { Dashboard, FolderOpen, People, QueueMusic, Search, Settings, Menu, Logout, Album, MusicNote, Block, MeetingRoom, LibraryMusic, FactCheck } from '@mui/icons-material';
+import { Dashboard, FolderOpen, People, QueueMusic, Search, Settings, Menu, Logout, Album, MusicNote, Block, MeetingRoom, LibraryMusic, FactCheck, Favorite } from '@mui/icons-material';
 import { useAuth } from '../auth/AuthContext';
 import { NowPlayingBar } from './NowPlayingBar';
 
 const drawerWidth = 232;
 const groups = [
     { label: 'Library', items: [
-        { label: 'Overview', icon: <Dashboard />, path: '/' },
+        { label: 'Home', icon: <Dashboard />, path: '/' },
         { label: 'Artists', icon: <LibraryMusic />, path: '/artists' },
         { label: 'Albums', icon: <Album />, path: '/albums' },
         { label: 'Tracks', icon: <MusicNote />, path: '/tracks' },
     ] },
     { label: 'Your music', items: [
+        { label: 'Favourites', icon: <Favorite />, path: '/favorites' },
         { label: 'Playlists', icon: <QueueMusic />, path: '/playlists' },
         { label: 'Mixed tapes', icon: <Album />, path: '/mixed-tapes' },
         { label: 'Auditoriums', icon: <MeetingRoom />, path: '/auditoriums' },
@@ -31,7 +32,10 @@ export default function Layout() {
     const [mobileOpen, setMobileOpen] = useState(false);
     const location = useLocation();
     const navigate = useNavigate();
-    const section = groups.flatMap(g => g.items).find(i => i.path !== '/' && location.pathname.startsWith(i.path))?.label ?? 'Overview';
+    const section = location.pathname.startsWith('/search') ? 'Search'
+        : groups.flatMap(g => g.items).find(i => i.path !== '/' && location.pathname.startsWith(i.path))?.label ?? 'Home';
+    // The browser tab names the page being looked at.
+    useEffect(() => { document.title = `${section} · SonaFly`; }, [section]);
     const drawer = <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
         <Toolbar sx={{ gap: 1.25, minHeight: '80px !important' }}>
             <Box component="img" src="/sonafly.png" alt="" sx={{ width: 40, height: 40, borderRadius: 2 }} />

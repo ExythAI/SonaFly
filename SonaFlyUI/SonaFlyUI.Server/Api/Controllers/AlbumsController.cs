@@ -23,7 +23,8 @@ public class AlbumsController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<PaginatedResult<AlbumDto>>> GetAll(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 50,
-        [FromQuery] Guid? artistId = null, [FromQuery] string? sort = null, CancellationToken ct = default)
+        [FromQuery] Guid? artistId = null, [FromQuery] string? sort = null, CancellationToken ct = default,
+        [FromQuery] string? filter = null)
     {
         if (!Pagination.TryValidate(page, pageSize, out page, out pageSize, out var pagingError))
             return BadRequest(new { message = pagingError });
@@ -38,6 +39,14 @@ public class AlbumsController : ControllerBase
             .WhereHasPlayableTracks(_db, CurrentUserId);
         if (artistId.HasValue)
             query = query.Where(a => a.AlbumArtistId == artistId.Value);
+
+        // Title or artist, folded the same way the stored names are; see SearchText.
+        if (!Pagination.TryValidateQueryText(filter, "filter", out var filterError))
+            return BadRequest(new { message = filterError });
+        var folded = SearchText.Normalize(filter);
+        if (folded.Length > 0)
+            query = query.Where(a => a.SearchTitle.Contains(folded) ||
+                (a.AlbumArtist != null && a.AlbumArtist.SearchName.Contains(folded)));
         var total = await query.CountAsync(ct);
         // Every order ends in Id: the leading columns are non-unique, and without a
         // tiebreaker a row can repeat on one page and vanish from the next (N20).
@@ -86,7 +95,7 @@ public class AlbumsController : ControllerBase
                 t.Id, t.Title,
                 t.PrimaryArtist != null ? t.PrimaryArtist.Name : null,
                 album.Title, album.Id,
-                t.TrackNumber, t.DiscNumber, t.DurationSeconds, album.ArtworkId, t.Genre
+                t.TrackNumber, t.DiscNumber, t.DurationSeconds, album.ArtworkId, t.Genre, t.PrimaryArtistId
             ))
             .ToListAsync(ct);
 

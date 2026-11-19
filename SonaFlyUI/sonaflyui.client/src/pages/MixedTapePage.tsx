@@ -57,7 +57,7 @@ const TapeListView: React.FC<{ onSelect: (id: string) => void; onCreate: () => v
             {(!tapes || tapes.length === 0) && (
                 <Card sx={{ textAlign: 'center', py: 8, background: 'linear-gradient(135deg, rgba(255,107,107,0.05), rgba(78,205,196,0.05))' }}>
                     <CardContent>
-                        <Box component="img" src="/mixedtape-200.png" alt="Mixed Tape" sx={{ width: 200, height: 200, mb: 2, opacity: 0.3 }} />
+                        <Box component="img" src="/mixedtape-200.png" alt="Mixed Tape" sx={{ width: 200, height: 'auto', mb: 2, opacity: 0.3 }} />
                         <Typography variant="h6" color="text.secondary">No mixed tapes yet</Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                             Create your first 60-minute curated playlist
@@ -80,7 +80,7 @@ const TapeListView: React.FC<{ onSelect: (id: string) => void; onCreate: () => v
                                 <CardActionArea onClick={() => onSelect(tape.id)}>
                                     <CardContent>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-                                            <Box component="img" src="/mixedtape-48.png" alt="" sx={{ width: 48, height: 48 }} />
+                                            <Box component="img" src="/mixedtape-48.png" alt="" sx={{ width: 48, height: 'auto' }} />
                                             <Box sx={{ flex: 1, minWidth: 0 }}>
                                                 <Typography variant="h6" fontWeight={700} noWrap>{tape.name}</Typography>
                                                 <Typography variant="caption" color="text.secondary">
@@ -339,7 +339,7 @@ const TapeDetailView: React.FC<{ tapeId: string; onBack: () => void }> = ({ tape
                     background: 'linear-gradient(135deg, #FF6B6B, #FFE66D)',
                     WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'
                 }}>
-                    <Box component="img" src="/mixedtape-32.png" alt="" sx={{ width: 32, height: 32, mr: 0.5, display: 'inline-block', verticalAlign: 'middle' }} />{' '}{tape.name}
+                    <Box component="img" src="/mixedtape-32.png" alt="" sx={{ width: 32, height: 'auto', mr: 0.5, display: 'inline-block', verticalAlign: 'middle' }} />{' '}{tape.name}
                 </Typography>
                 <Button size="small" variant="contained" startIcon={<PlayArrow />} onClick={handlePlayAll}
                     disabled={tape.items?.length === 0}
@@ -398,7 +398,7 @@ const TapeDetailView: React.FC<{ tapeId: string; onBack: () => void }> = ({ tape
                     <Card sx={{ bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
                         {tape.items?.length === 0 ? (
                             <Box sx={{ py: 6, textAlign: 'center' }}>
-                                <Box component="img" src="/mixedtape-80.png" alt="" sx={{ width: 80, height: 80, mb: 1, opacity: 0.3 }} />
+                                <Box component="img" src="/mixedtape-80.png" alt="" sx={{ width: 80, height: 'auto', mb: 1, opacity: 0.3 }} />
                                 <Typography variant="body2" color="text.secondary">Empty tape</Typography>
                                 <Typography variant="caption" color="text.secondary">Browse albums on the right to add tracks</Typography>
                             </Box>
@@ -500,7 +500,7 @@ const MixedTapePage: React.FC = () => {
                     background: 'linear-gradient(135deg, #FF6B6B, #FFE66D)',
                     WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'
                 }}>
-                    <Box component="img" src="/mixedtape-32.png" alt="" sx={{ width: 32, height: 32, mr: 0.5, display: 'inline-block', verticalAlign: 'middle' }} />{' '}New Mixed Tape
+                    <Box component="img" src="/mixedtape-32.png" alt="" sx={{ width: 32, height: 'auto', mr: 0.5, display: 'inline-block', verticalAlign: 'middle' }} />{' '}New Mixed Tape
                 </DialogTitle>
                 <DialogContent sx={{ pt: '16px !important' }}>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>

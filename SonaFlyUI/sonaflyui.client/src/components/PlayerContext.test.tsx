@@ -4,7 +4,7 @@ import { PlayerProvider, usePlayer, type Track } from './PlayerContext';
 import { streamUrl } from '../api/client';
 
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
-vi.mock('../api/client', () => ({ streamUrl: vi.fn(), reportPlay: vi.fn() }));
+vi.mock('../api/client', () => ({ streamUrl: vi.fn(), reportPlay: vi.fn(), artworkUrl: vi.fn() }));
 let player: ReturnType<typeof usePlayer>;
 let audio: FakeAudio;
 class FakeAudio extends EventTarget {
@@ -84,4 +84,93 @@ test('streaming failures have a visible error state and can be retried', async (
     await act(async () => player.retry());
     expect(player.playbackError).toBeNull();
     expect(player.isPlaying).toBe(true);
+});
+
+const third: Track = { id: 'third', title: 'Third' };
+
+test('repeat-all wraps to the start, and repeat-one replays the same track', async () => {
+    await act(async () => player.play(second, [first, second]));
+    expect(player.hasNext).toBe(false);
+
+    act(() => player.cycleRepeat());
+    expect(player.repeat).toBe('all');
+    expect(player.hasNext).toBe(true);
+    await act(async () => audio.dispatchEvent(new Event('ended')));
+    expect(player.currentTrack?.id).toBe('first');
+
+    act(() => player.cycleRepeat());
+    expect(player.repeat).toBe('one');
+    await act(async () => audio.dispatchEvent(new Event('ended')));
+    expect(player.currentTrack?.id).toBe('first');
+    expect(player.currentIndex).toBe(0);
+
+    act(() => player.cycleRepeat());
+    expect(player.repeat).toBe('off');
+});
+
+test('the end of the queue stops there when repeat is off', async () => {
+    await act(async () => player.play(second, [first, second]));
+    await act(async () => audio.dispatchEvent(new Event('ended')));
+    expect(player.currentTrack?.id).toBe('second');
+    expect(player.isPlaying).toBe(false);
+    expect(vi.mocked(streamUrl)).toHaveBeenCalledTimes(1);
+});
+
+test('play next goes straight after the current track, and add to queue goes last', async () => {
+    await act(async () => player.play(first, [first, second]));
+    act(() => player.playNext(third));
+    act(() => player.addToQueue([first]));
+    expect(player.queue.map(t => t.id)).toEqual(['first', 'third', 'second', 'first']);
+    // The track that was playing keeps playing.
+    expect(player.currentTrack?.id).toBe('first');
+    expect(vi.mocked(streamUrl)).toHaveBeenCalledTimes(1);
+    await act(async () => audio.dispatchEvent(new Event('ended')));
+    expect(player.currentTrack?.id).toBe('third');
+});
+
+test('queueing with nothing playing starts playback', async () => {
+    await act(async () => player.addToQueue([second, third]));
+    expect(player.currentTrack?.id).toBe('second');
+    expect(player.queue).toHaveLength(2);
+});
+
+test('turning shuffle on keeps the current track first, and off restores the order', async () => {
+    const list = [first, second, third];
+    await act(async () => player.play(second, list));
+
+    act(() => player.toggleShuffle());
+    expect(player.shuffle).toBe(true);
+    expect(player.currentIndex).toBe(0);
+    expect(player.queue[0].id).toBe('second');
+    expect(player.queue.map(t => t.id).sort()).toEqual(['first', 'second', 'third']);
+    expect(vi.mocked(streamUrl)).toHaveBeenCalledTimes(1);
+
+    act(() => player.toggleShuffle());
+    expect(player.shuffle).toBe(false);
+    expect(player.queue.map(t => t.id)).toEqual(['first', 'second', 'third']);
+    expect(player.currentIndex).toBe(1);
+});
+
+test('previous restarts a track that is under way, and goes back when it has only just begun', async () => {
+    await act(async () => player.play(second, [first, second]));
+    audio.currentTime = 42;
+    act(() => player.previous());
+    expect(audio.currentTime).toBe(0);
+    expect(player.currentTrack?.id).toBe('second');
+
+    await act(async () => player.previous());
+    expect(player.currentTrack?.id).toBe('first');
+});
+
+test('space pauses and resumes, but not while typing in a field', async () => {
+    await act(async () => player.play(first));
+    const pauseSpy = vi.spyOn(audio, 'pause');
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })); });
+    expect(pauseSpy).toHaveBeenCalledTimes(1);
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })); });
+    expect(pauseSpy).toHaveBeenCalledTimes(1);
+    input.remove();
 });
