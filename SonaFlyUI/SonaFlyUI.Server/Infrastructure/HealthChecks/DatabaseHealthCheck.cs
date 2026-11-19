@@ -30,7 +30,9 @@ public sealed class DatabaseHealthCheck : IHealthCheck
         {
             // A real read, not just CanConnect: opening a SQLite file proves very little,
             // whereas reading a table proves the schema is present and readable.
-            _ = await _db.Users.AsNoTracking().Select(u => u.Id).FirstOrDefaultAsync(cancellationToken);
+            // "Is there any user?" rather than "the first user": the answer is not used, and
+            // asking for a first row in no order made EF Core log a warning after every start.
+            _ = await _db.Users.AsNoTracking().AnyAsync(cancellationToken);
             return HealthCheckResult.Healthy("Database is reachable.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

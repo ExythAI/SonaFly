@@ -44,6 +44,24 @@ public sealed class HealthCheckTests : IDisposable
     }
 
     [Fact]
+    public async Task TheProbeQuery_DoesNotAskForAFirstRowInNoParticularOrder()
+    {
+        // The probe ran "first user, in no order, with no filter", which made EF Core log
+        // a warning in the server log after every start. Here that warning is an error.
+        await _db.Database.EnsureCreatedAsync();
+        await using var strict = new SonaFlyDbContext(new DbContextOptionsBuilder<SonaFlyDbContext>()
+            .UseSqlite(_connection)
+            .ConfigureWarnings(w => w.Throw(
+                Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.FirstWithoutOrderByAndFilterWarning))
+            .Options);
+
+        var result = await new DatabaseHealthCheck(strict, NullLogger<DatabaseHealthCheck>.Instance)
+            .CheckHealthAsync(Context());
+
+        Assert.Equal(HealthStatus.Healthy, result.Status);
+    }
+
+    [Fact]
     public async Task AMissingSchema_IsUnhealthy()
     {
         // The file opens but the tables are not there — the case a bare "can I connect?"
